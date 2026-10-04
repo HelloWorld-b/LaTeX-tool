@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mathtext2doc"
+version = "0.1.0"
+description = "把 AI 生成的数学文本快速转成带公式和函数图像的文档图片"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "matplotlib>=3.5",
+    "numpy>=1.20",
+    "sympy>=1.10",
+]
+
+[project.scripts]
+mathtext2doc = "mathtext2doc.cli:main"
+
+[tool.setuptools]
+packages = ["mathtext2doc"]
