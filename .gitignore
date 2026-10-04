@@ -1,2 +1,77 @@
+# ============ 环境与本工具无关的目录 ============
 skills/
-node_modules/
+download/
+upload/
+agent-ctx/
+
+# ============ 开发日志（含会话细节，不公开） ============
+worklog.md
+worklog/
+*.worklog.md
+
+# ============ Python ============
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ============ LaTeX 中间产物 ============
+*.aux
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.bbl
+*.blg
+*.nav
+*.snm
+*.vrb
+*.dvi
+*.ps
+# 注意：*.pdf 和 *.tex 不忽略——它们是项目的最终/源文件
+# 但函数图 PNG 是生成产物，应忽略
+examples/*-plot*.png
+examples/*.aux
+examples/*.log
+
+# ============ 编辑器 / IDE ============
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ============ 敏感信息（绝对不能进仓库） ============
+# 任何可能含 token / 密钥 / 凭据的文件
+*.token
+*.pat
+.env
+.env.local
+secrets.*
+credentials.*
+# 防止误传 GitHub PAT
+*github_pat*
+*ghp_*
+
+# ============ 测试脚本（可选保留，按需取消注释） ============
+# scripts/test_pipeline.py
+
+# ============ 临时文件 ============
+*.tmp
+*.bak
+*.orig
