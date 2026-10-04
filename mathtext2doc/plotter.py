@@ -177,13 +177,17 @@ def _plot_explicit(ax, item: PlotItem, color: str) -> _PlottedCurve:
     n = min(n, 4000)
     xs = np.linspace(a, b, n)
     try:
-        ys = np.asarray(f(xs), dtype=float)
-    except Exception:
-        # 标量函数（如常数函数）会广播
-        try:
-            ys = np.full_like(xs, float(f(0.0)))
-        except Exception as ex:
-            raise PlotRenderError(f"显函数求值失败 {rhs!r}：{ex}")
+        ys_raw = f(xs)
+        # 常数函数 / 标量返回：广播到与 xs 同形状
+        if np.isscalar(ys_raw) or (hasattr(ys_raw, "shape") and ys_raw.shape == ()):
+            ys = np.full_like(xs, float(ys_raw))
+        else:
+            ys = np.asarray(ys_raw, dtype=float)
+            # 形状不匹配（如某些 sympy 函数返回 (1, N)）→ flatten
+            if ys.shape != xs.shape:
+                ys = ys.reshape(xs.shape) if ys.size == xs.size else np.broadcast_to(ys, xs.shape).astype(float)
+    except Exception as ex:
+        raise PlotRenderError(f"显函数求值失败 {rhs!r}：{ex}")
 
     # 屏蔽 NaN / inf
     mask = np.isfinite(ys)
