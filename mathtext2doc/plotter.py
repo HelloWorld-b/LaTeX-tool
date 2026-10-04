@@ -451,13 +451,26 @@ def render_plot(plot: Plot, out_path: str, dpi: int = 150) -> str:
 
     # 坐标范围
     if ymin is None or ymax is None:
+        # 纯显函数图：y 范围由 autoscale 决定
         ax.relim()
         ax.autoscale_view()
-        # 显函数图：x 范围用 item 指定的，y 范围由 autoscale 决定
         ax.set_xlim(xmin, xmax)
+        # 取 autoscale 后的实际 y 范围，用于判断是否启用 equal
+        y_lo, y_hi = ax.get_ylim()
+        x_span = xmax - xmin
+        y_span = y_hi - y_lo
+        # 默认 x/y 单位长度一致；但当 y 跨度远大于 x（如 tan、exp 等陡峭函数）
+        # 1:1 会让 x 轴被压扁到无法辨认，此时退回 'auto' 保证可读性。
+        # 阈值：y 跨度超过 x 跨度 3 倍，认为不适合 equal。
+        if x_span > 0 and y_span / x_span <= 3.0:
+            ax.set_aspect("equal", adjustable="box")
+        # 否则保持 auto（matplotlib 默认）
     else:
+        # 有隐函数图（或显隐混合）：用户显式指定了 x、y 范围，
+        # 默认 x/y 单位长度一致（几何意义正确，单位圆才是圆）。
         ax.set_xlim(xmin, xmax)
         ax.set_ylim(ymin, ymax)
+        ax.set_aspect("equal", adjustable="box")
 
     ax.axhline(0, color="#888", linewidth=0.5)
     ax.axvline(0, color="#888", linewidth=0.5)
