@@ -138,6 +138,7 @@ body {{
 }}
 .app {{ display: flex; height: 100vh; }}
 .editor-pane, .preview-pane {{ flex: 1; display: flex; flex-direction: column; overflow: hidden; }}
+.editor-pane {{ position: relative; }}
 .editor-pane {{ border-right: 1px solid #ddd; background: #fff; }}
 .preview-pane {{ background: #e9e9e9; overflow-y: auto; }}
 
@@ -165,6 +166,20 @@ body {{
   font-family: "Sarasa Mono SC", "Consolas", "Menlo", monospace;
   font-size: 14px; line-height: 1.6; resize: none; outline: none;
   tab-size: 2;
+  transition: background .15s, box-shadow .15s;
+}}
+/* 拖拽悬浮反馈 */
+#editor.dragover {{
+  background: #e8f4fd;
+  box-shadow: inset 0 0 0 3px #3498db;
+}}
+.editor-pane.dragover::before {{
+  content: "📁 拖放 .txt / .md 文件到此处加载";
+  position: absolute; inset: 60px 0 30px 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; color: #3498db; pointer-events: none;
+  background: rgba(232, 244, 253, .9); z-index: 10;
+  border: 3px dashed #3498db; margin: 8px;
 }}
 
 .preview-content {{
@@ -220,7 +235,7 @@ body {{
       <label>图宽 <input type="number" id="plot-width" value="0.7" min="0.1" max="1" step="0.1"></label>
       <label>DPI <input type="number" id="dpi" value="150" min="72" max="400" step="10"></label>
     </div>
-    <textarea id="editor" spellcheck="false" placeholder="在此输入文本... 支持中文、Markdown、$...$ 公式、@plot{{...}} 绘图"></textarea>
+    <textarea id="editor" spellcheck="false" placeholder="在此输入文本，或拖放 .txt / .md 文件到此处加载&#10;支持中文、Markdown、$...$ 公式、@plot{{...}} 绘图&#10;双击空白处可选择文件"></textarea>
     <div class="status-bar" id="status">就绪</div>
   </div>
   <div class="preview-pane">
@@ -350,6 +365,87 @@ editor.addEventListener('input', () => {{
 editor.addEventListener('keydown', (e) => {{
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {{
     e.preventDefault(); doRender();
+  }}
+}});
+
+// ====== 拖拽上传 ======
+const editorPane = document.querySelector('.editor-pane');
+
+// 阻止默认拖拽行为（避免浏览器打开文件）
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(ev => {{
+  editor.addEventListener(ev, (e) => {{ e.preventDefault(); e.stopPropagation(); }});
+  editorPane.addEventListener(ev, (e) => {{ e.preventDefault(); e.stopPropagation(); }});
+}});
+
+// 拖进编辑器区：显示视觉反馈
+editorPane.addEventListener('dragenter', (e) => {{
+  editorPane.classList.add('dragover');
+  editor.classList.add('dragover');
+}});
+editorPane.addEventListener('dragover', (e) => {{
+  editorPane.classList.add('dragover');
+  editor.classList.add('dragover');
+  e.dataTransfer.dropEffect = 'copy';
+}});
+// 拖出：移除反馈（dragleave 检测离开整个 pane 才移除）
+editorPane.addEventListener('dragleave', (e) => {{
+  // 如果 relatedTarget 还在 pane 内，不移除
+  if (!editorPane.contains(e.relatedTarget)) {{
+    editorPane.classList.remove('dragover');
+    editor.classList.remove('dragover');
+  }}
+}});
+
+// 放下文件
+editorPane.addEventListener('drop', async (e) => {{
+  editorPane.classList.remove('dragover');
+  editor.classList.remove('dragover');
+  const files = e.dataTransfer.files;
+  if (!files || !files.length) return;
+  const file = files[0];
+  // 接受 .txt / .md / .markdown / 无扩展名的文本文件
+  const name = file.name.toLowerCase();
+  const okExt = name.endsWith('.txt') || name.endsWith('.md') || name.endsWith('.markdown') || !name.includes('.');
+  if (!okExt) {{
+    setStatus(`✗ 不支持的文件类型：${{file.name}}（仅支持 .txt / .md）`, true);
+    return;
+  }}
+  if (file.size > 1024 * 1024) {{
+    setStatus(`✗ 文件过大（${{(file.size/1024).toFixed(0)}}KB > 1MB）`, true);
+    return;
+  }}
+  try {{
+    const text = await file.text();
+    editor.value = text;
+    doRender();
+    setStatus(`✓ 已加载 ${{file.name}}（${{(file.size/1024).toFixed(1)}}KB）`);
+  }} catch (ex) {{
+    setStatus(`✗ 读取文件失败：${{ex.message}}`, true);
+  }}
+}});
+
+// 也支持点击编辑器选择文件（隐藏的 file input）
+const fileInput = document.createElement('input');
+fileInput.type = 'file';
+fileInput.accept = '.txt,.md,.markdown,text/plain';
+fileInput.style.display = 'none';
+document.body.appendChild(fileInput);
+fileInput.addEventListener('change', async (e) => {{
+  const file = e.target.files[0];
+  if (!file) return;
+  try {{
+    const text = await file.text();
+    editor.value = text;
+    doRender();
+    setStatus(`✓ 已加载 ${{file.name}}`);
+  }} catch (ex) {{
+    setStatus(`✗ 读取文件失败：${{ex.message}}`, true);
+  }}
+}});
+// 双击编辑器空白处触发文件选择
+editor.addEventListener('dblclick', (e) => {{
+  if (editor.value === '' || confirm('打开文件会覆盖当前内容，是否继续？')) {{
+    fileInput.value = ''; fileInput.click();
   }}
 }});
 
