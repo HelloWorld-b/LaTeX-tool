@@ -173,7 +173,11 @@ export function renderPlot(plot, container, displayWidth = 0.7) {
     const color = COLORS[i % COLORS.length];
     try {
       if (item.kind === 'explicit') renderExplicit(board, item, color);
-      else if (item.kind === 'implicit') renderImplicit(board, item, color, xmin, xmax, ymin, ymax);
+      else if (item.kind === 'implicit') {
+        // 隐函数用 item 自己的 xRange/yRange 采样，而非整个 board 范围
+        const ix = item.xRange, iy = item.yRange;
+        renderImplicit(board, item, color, ix[0], ix[1], iy[0], iy[1]);
+      }
       else if (item.kind === 'shape') renderShape(board, item, color);
     } catch (ex) {
       console.warn(`绘图项 ${i} 失败:`, ex);
@@ -273,23 +277,45 @@ function renderImplicit(board, item, color, xmin, xmax, ymin, ymax) {
 }
 
 function marchingSquares(x1, x2, y1, y2, z11, z12, z21, z22) {
-  // 返回符号变化处的线段端点列表
+  // 网格单元四个角：
+  //   z11 = (x1, y1) 左下
+  //   z12 = (x1, y2) 左上
+  //   z21 = (x2, y1) 右下
+  //   z22 = (x2, y2) 右上
+  // 返回 F=0 等高线穿过该单元的线段列表
   const segs = [];
   const code = (z11 > 0 ? 1 : 0) | (z12 > 0 ? 2 : 0) | (z22 > 0 ? 4 : 0) | (z21 > 0 ? 8 : 0);
   if (code === 0 || code === 15) return segs;
-  const lerp = (a, b, za, zb) => a + (b - a) * (-za / (zb - za));
-  // 四条边的中点
-  const top = [lerp(x1, x2, z11, z21), y2];
-  const right = [x2, lerp(y2, y1, z21, z22)];
-  const bottom = [lerp(x1, x2, z12, z22), y1];
-  const left = [x1, lerp(y2, y1, z11, z12)];
+  // 线性插值：在两个角之间找 F=0 的点
+  // t = -za / (zb - za)，范围 [0, 1]
+  const lerp = (a, b, za, zb) => {
+    const denom = zb - za;
+    if (Math.abs(denom) < 1e-12) return (a + b) / 2;  // 避免除零
+    const t = -za / denom;
+    return a + (b - a) * t;
+  };
+  // 四条边上的交点
+  const bottom = [lerp(x1, x2, z11, z21), y1];  // 底边（y=y1）
+  const top = [lerp(x1, x2, z12, z22), y2];     // 顶边（y=y2）
+  const left = [x1, lerp(y1, y2, z11, z12)];    // 左边（x=x1）
+  const right = [x2, lerp(y1, y2, z21, z22)];   // 右边（x=x2）
+  // 标准 marching squares 查找表
+  // 位编码：bit0=z11(左下), bit1=z12(左上), bit2=z22(右上), bit3=z21(右下)
   const cases = {
-    1: [[left, top]], 2: [[top, right]], 3: [[left, right]],
-    4: [[right, bottom]], 5: [[left, top], [right, bottom]],
-    6: [[top, bottom]], 7: [[left, bottom]],
-    8: [[left, bottom]], 9: [[top, bottom]],
-    10: [[left, bottom], [top, right]], 11: [[right, bottom]],
-    12: [[left, right]], 13: [[top, right]], 14: [[left, top]],
+    1: [[left, bottom]],     // 只有左下 > 0
+    2: [[left, top]],        // 只有左上 > 0
+    3: [[bottom, top]],      // 左下、左上 > 0
+    4: [[top, right]],       // 只有右上 > 0
+    5: [[left, bottom], [top, right]],  // 对角（鞍点）
+    6: [[left, right]],      // 左上、右上 > 0
+    7: [[bottom, right]],    // 左下、左上、右上 > 0
+    8: [[bottom, right]],    // 只有右下 > 0
+    9: [[left, right]],      // 左下、右下 > 0
+    10: [[left, top], [bottom, right]],  // 对角（鞍点）
+    11: [[top, right]],      // 左下、左上、右下 > 0
+    12: [[bottom, top]],     // 右上、右下 > 0
+    13: [[left, bottom]],    // 左下、右上、右下 > 0
+    14: [[left, top]],       // 左上、右上、右下 > 0
   };
   return cases[code] || segs;
 }
