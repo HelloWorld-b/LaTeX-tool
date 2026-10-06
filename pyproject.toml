@@ -8,12 +8,37 @@ version = "0.1.0"
 description = "把 AI 生成的数学文本快速转成带公式和函数图像的文档图片"
 readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    {name = "HelloWorld-b", email = "lizhengxu0325@qq.com"},
+]
+keywords = ["latex", "math", "markdown", "cli", "education", "chinese", "plot", "documentation"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Education",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Text Processing :: Markup :: LaTeX",
+    "Topic :: Utilities",
+]
 dependencies = [
     "matplotlib>=3.5",
     "numpy>=1.20",
     "sympy>=1.10",
     "PyMuPDF>=1.23",
 ]
+
+[project.urls]
+Homepage = "https://github.com/HelloWorld-b/LaTeX-tool"
+Repository = "https://github.com/HelloWorld-b/LaTeX-tool"
+Issues = "https://github.com/HelloWorld-b/LaTeX-tool/issues"
 
 [project.scripts]
 mathtext2doc = "mathtext2doc.cli:main"
