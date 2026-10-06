@@ -343,6 +343,7 @@ function setStatus(msg, isErr = false) {{
 }}
 
 let _rendering = false;  // 防重入锁
+let _renderTimer = null;
 function doRender() {{
   if (_rendering) return;  // 上一次渲染未完成，跳过
   const text = editor.value;
@@ -354,6 +355,14 @@ function doRender() {{
   }}
   _rendering = true;
   setStatus(`⏳ 渲染中...（${{text.length}} 字符）`);
+  // 保险：5 秒后强制释放锁，避免异常导致永久卡死
+  if (_renderTimer) clearTimeout(_renderTimer);
+  _renderTimer = setTimeout(() => {{
+    if (_rendering) {{
+      _rendering = false;
+      setStatus('✗ 渲染超时（5秒），请减少内容或检查语法', true);
+    }}
+  }}, 5000);
   // 用 setTimeout 让 UI 先更新状态栏，避免大文档渲染时页面无响应
   setTimeout(() => {{
     try {{
@@ -366,6 +375,7 @@ function doRender() {{
       console.error(ex);
     }} finally {{
       _rendering = false;
+      if (_renderTimer) {{ clearTimeout(_renderTimer); _renderTimer = null; }}
     }}
   }}, 30);
 }}
@@ -384,10 +394,14 @@ editor.addEventListener('keydown', (e) => {{
 // ====== 拖拽上传 ======
 const editorPane = document.querySelector('.editor-pane');
 
-// 阻止默认拖拽行为（避免浏览器打开文件）
+// 全局阻止默认拖拽行为（避免浏览器打开文件导致页面导航走）
+// 必须在 document 级别阻止，否则拖到非 editor 区域时 Edge 会打开文件
 ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(ev => {{
-  editor.addEventListener(ev, (e) => {{ e.preventDefault(); e.stopPropagation(); }});
-  editorPane.addEventListener(ev, (e) => {{ e.preventDefault(); e.stopPropagation(); }});
+  document.addEventListener(ev, (e) => {{ e.preventDefault(); e.stopPropagation(); }}, false);
+}});
+// editorPane 上额外阻止一次（确保 drop 能被处理）
+['dragenter', 'dragover', 'drop'].forEach(ev => {{
+  editorPane.addEventListener(ev, (e) => {{ e.preventDefault(); e.stopPropagation(); }}, false);
 }});
 
 // 拖进编辑器区：显示视觉反馈
@@ -409,14 +423,19 @@ editorPane.addEventListener('dragleave', (e) => {{
   }}
 }});
 
-// 放下文件
-editorPane.addEventListener('drop', async (e) => {{
+// 放下文件（用 FileReader 同步 API，避免 async/await 在 Edge 上的兼容问题）
+editorPane.addEventListener('drop', (e) => {{
+  // preventDefault 已在前面全局监听里调用，这里再保险一次
+  e.preventDefault();
+  e.stopPropagation();
   editorPane.classList.remove('dragover');
   editor.classList.remove('dragover');
   const files = e.dataTransfer.files;
-  if (!files || !files.length) return;
+  if (!files || !files.length) {{
+    setStatus('✗ 未检测到文件', true);
+    return;
+  }}
   const file = files[0];
-  // 接受 .txt / .md / .markdown / 无扩展名的文本文件
   const name = file.name.toLowerCase();
   const okExt = name.endsWith('.txt') || name.endsWith('.md') || name.endsWith('.markdown') || !name.includes('.');
   if (!okExt) {{
@@ -427,17 +446,25 @@ editorPane.addEventListener('drop', async (e) => {{
     setStatus(`✗ 文件过大（${{(file.size/1024).toFixed(0)}}KB > 1MB）`, true);
     return;
   }}
-  try {{
-    let text = await file.text();
-    // 规范化：去 BOM、统一换行符、去零宽字符
-    text = text.replace(/^\\uFEFF/, '').replace(/\\r\\n/g, '\\n').replace(/\\r/g, '\\n');
-    text = text.replace(/[\\u200B\\u200C\\u200D\\uFEFF]/g, '');
-    editor.value = text;
-    // doRender 内部已有 setTimeout + 状态提示，直接调用
-    doRender();
-  }} catch (ex) {{
-    setStatus(`✗ 读取文件失败：${{ex.message}}`, true);
-  }}
+  setStatus(`⏳ 正在读取 ${{file.name}}...`);
+  // 用 FileReader 读取（比 file.text() 兼容性更好）
+  const reader = new FileReader();
+  reader.onload = () => {{
+    try {{
+      let text = String(reader.result || '');
+      // 规范化：去 BOM、统一换行符、去零宽字符
+      text = text.replace(/^\\uFEFF/, '').replace(/\\r\\n/g, '\\n').replace(/\\r/g, '\\n');
+      text = text.replace(/[\\u200B\\u200C\\u200D\\uFEFF]/g, '');
+      editor.value = text;
+      doRender();
+    }} catch (ex) {{
+      setStatus(`✗ 处理文件失败：${{ex.message}}`, true);
+    }}
+  }};
+  reader.onerror = () => {{
+    setStatus(`✗ 读取文件失败：${{reader.error && reader.error.message || '未知错误'}}`, true);
+  }};
+  reader.readAsText(file, 'utf-8');
 }});
 
 // 也支持点击编辑器选择文件（隐藏的 file input）
@@ -446,17 +473,26 @@ fileInput.type = 'file';
 fileInput.accept = '.txt,.md,.markdown,text/plain';
 fileInput.style.display = 'none';
 document.body.appendChild(fileInput);
-fileInput.addEventListener('change', async (e) => {{
+fileInput.addEventListener('change', (e) => {{
   const file = e.target.files[0];
   if (!file) return;
-  try {{
-    const text = await file.text();
-    editor.value = text;
-    doRender();
-    setStatus(`✓ 已加载 ${{file.name}}`);
-  }} catch (ex) {{
-    setStatus(`✗ 读取文件失败：${{ex.message}}`, true);
-  }}
+  setStatus(`⏳ 正在读取 ${{file.name}}...`);
+  const reader = new FileReader();
+  reader.onload = () => {{
+    try {{
+      let text = String(reader.result || '');
+      text = text.replace(/^\\uFEFF/, '').replace(/\\r\\n/g, '\\n').replace(/\\r/g, '\\n');
+      text = text.replace(/[\\u200B\\u200C\\u200D\\uFEFF]/g, '');
+      editor.value = text;
+      doRender();
+    }} catch (ex) {{
+      setStatus(`✗ 处理文件失败：${{ex.message}}`, true);
+    }}
+  }};
+  reader.onerror = () => {{
+    setStatus(`✗ 读取文件失败`, true);
+  }};
+  reader.readAsText(file, 'utf-8');
 }});
 // 双击编辑器空白处触发文件选择
 editor.addEventListener('dblclick', (e) => {{
