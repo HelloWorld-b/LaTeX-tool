@@ -353,17 +353,21 @@ function doRender() {{
     return;
   }}
   _rendering = true;
-  try {{
-    currentBlocks = parseDocument(text);
-    const defaultWidth = parseFloat(document.getElementById('plot-width').value) || 0.7;
-    renderDocument(currentBlocks, preview, {{ defaultWidth }});
-    setStatus(`✓ 渲染成功，共 ${{currentBlocks.length}} 个块`);
-  }} catch (ex) {{
-    setStatus(`✗ ${{ex.message}}`, true);
-    console.error(ex);
-  }} finally {{
-    _rendering = false;
-  }}
+  setStatus(`⏳ 渲染中...（${{text.length}} 字符）`);
+  // 用 setTimeout 让 UI 先更新状态栏，避免大文档渲染时页面无响应
+  setTimeout(() => {{
+    try {{
+      currentBlocks = parseDocument(text);
+      const defaultWidth = parseFloat(document.getElementById('plot-width').value) || 0.7;
+      renderDocument(currentBlocks, preview, {{ defaultWidth }});
+      setStatus(`✓ 渲染成功，共 ${{currentBlocks.length}} 个块`);
+    }} catch (ex) {{
+      setStatus(`✗ ${{ex.message}}`, true);
+      console.error(ex);
+    }} finally {{
+      _rendering = false;
+    }}
+  }}, 30);
 }}
 
 editor.addEventListener('input', () => {{
@@ -429,12 +433,8 @@ editorPane.addEventListener('drop', async (e) => {{
     text = text.replace(/^\\uFEFF/, '').replace(/\\r\\n/g, '\\n').replace(/\\r/g, '\\n');
     text = text.replace(/[\\u200B\\u200C\\u200D\\uFEFF]/g, '');
     editor.value = text;
-    setStatus(`✓ 正在渲染 ${{file.name}}...`);
-    // 用 setTimeout 让 UI 先更新状态栏，避免卡死时无反馈
-    setTimeout(() => {{
-      try {{ doRender(); }}
-      catch (e) {{ setStatus(`✗ 渲染失败：${{e.message}}`, true); }}
-    }}, 50);
+    // doRender 内部已有 setTimeout + 状态提示，直接调用
+    doRender();
   }} catch (ex) {{
     setStatus(`✗ 读取文件失败：${{ex.message}}`, true);
   }}

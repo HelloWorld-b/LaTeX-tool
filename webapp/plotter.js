@@ -216,9 +216,12 @@ function renderExplicit(board, item, color) {
   const [a, b] = item.xRange;
   const expr = item.expr.split('=')[1].trim();  // y = ... → ...
   const fn = makeFunction1D(expr);
-  // JSXGraph functiongraph
-  const curve = board.create('functiongraph', [fn, a, b], {
-    strokeColor: color, strokeWidth: 2, highlight: false,
+  // 用 curve 代替 functiongraph（JSXGraph 1.14 的 functiongraph 在某些情况不生成数据）
+  // curve [xFn, yFn, tMin, tMax]
+  const xFn = (t) => t;
+  const yFn = (t) => fn(t);
+  const curve = board.create('curve', [xFn, yFn, a, b], {
+    strokeColor: color, strokeWidth: 2, highlight: false, curveType: 'parameter',
   });
   // 标签：曲线中点
   if (item.label) {
