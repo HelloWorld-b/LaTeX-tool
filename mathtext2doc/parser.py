@@ -106,6 +106,7 @@ class PlotItem:
 @dataclass
 class Plot:
     items: List[PlotItem] = field(default_factory=list)
+    width: Optional[float] = None  # 单图宽度覆盖（0~1，相对于 paperwidth）
 
 
 @dataclass
@@ -145,10 +146,13 @@ def latex_escape(s: str) -> str:
 # @plot 指令解析
 # ---------------------------------------------------------------------------
 
-# @plot{ ... }：花括号内可以跨多行，分号 ; 分隔多个绘制项。
-# 我们用正则找到 @plot{ 后面到匹配的 }，因为内容里不会再有嵌套花括号
-# （label="..." 里的字符串也不会包含 }，简化处理）。
-_PLOT_RE = re.compile(r"@plot\{(.*?)\}", re.DOTALL)
+# @plot{ ... } 或 @plot(width=0.5){ ... }
+# 可选的 (width=0.x) 选项控制图在文档中的宽度（相对于 paperwidth，0~1）
+# 花括号内可以跨多行，分号 ; 分隔多个绘制项。
+_PLOT_RE = re.compile(
+    r"@plot(?:\(\s*width\s*=\s*([0-9]*\.?[0-9]+)\s*\))?\{(.*?)\}",
+    re.DOTALL,
+)
 
 
 def _parse_plot_items(body: str) -> List[PlotItem]:
@@ -578,9 +582,20 @@ def parse_document(text: str) -> List:
     plot_placeholders: List[str] = []
 
     def _capture_plot(m: "re.Match[str]") -> str:
-        body = m.group(1)
+        width_str = m.group(1)  # 可能为 None
+        body = m.group(2)
         items = _parse_plot_items(body)
-        plot = Plot(items=items)
+        width = None
+        if width_str is not None:
+            try:
+                width = float(width_str)
+            except ValueError:
+                width = None
+            if width is not None and not (0 < width <= 1.0):
+                raise PlotParseError(
+                    f"@plot 的 width 必须在 (0, 1] 之间，得到 {width}"
+                )
+        plot = Plot(items=items, width=width)
         plots.append(plot)
         placeholder = f"\x00PLOT{len(plots) - 1}\x00"
         plot_placeholders.append(placeholder)

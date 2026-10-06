@@ -83,6 +83,7 @@ usage: mathtext2doc [-h] [--compiler {xelatex,lualatex,pdflatex}]
 | `input` | 输入文件路径（UTF-8 纯文本） | 必填 |
 | `--compiler` | 指定 LaTeX 编译器：`xelatex` / `lualatex` / `pdflatex` | 自动选择（优先 `xelatex`） |
 | `--dpi` | PNG DPI | `150` |
+| `--plot-width` | 函数图在文档中的宽度（相对于 `\paperwidth`，0~1） | `0.7` |
 | `--keep-intermediates` | 保留函数图 PNG 和 `.log`/`.pdf`/`.aux` 等中间文件 | 默认开启 |
 | `--no-keep-intermediates` | 不保留中间文件（仅保留最终 PNG 和 `.tex`） | — |
 | `--overwrite` | 覆盖已有输出文件 | 默认不覆盖 |
@@ -107,6 +108,9 @@ python -m mathtext2doc input.txt
 
 # 指定编译器和 DPI
 python -m mathtext2doc input.txt --compiler xelatex --dpi 200
+
+# 调整函数图在文档中的宽度（默认 0.7 = 页面宽度的 70%）
+python -m mathtext2doc input.txt --plot-width 0.5
 
 # 覆盖已有输出
 python -m mathtext2doc input.txt --overwrite
@@ -143,6 +147,8 @@ python -m mathtext2doc input.txt --no-keep-intermediates
 
 格式：`@plot{ ... }`，内部用分号 `;` 分隔多个绘制项。
 
+可选的宽度选项：`@plot(width=0.5){ ... }`，控制图在文档中的宽度（相对于 `\paperwidth`，0~1）。不指定时用全局默认（CLI `--plot-width`，默认 `0.7`）。
+
 **显函数**（`y = f(x)`）：
 
 ```
@@ -165,15 +171,36 @@ x^2 + y^2 = 1, x in [-2, 2], y in [-2, 2], label="单位圆"
 }
 ```
 
+**单图指定宽度**：
+
+```
+@plot(width=0.5){
+  y = sin(x), x in [-pi, pi], label="sin(x)"
+}
+```
+
+**几何图形**（`shape=...`）：
+
+```
+@plot{
+  shape=circle, center=(0, 0), r=2, label="圆 C";
+  shape=point, at=(2, 0), label="P";
+  shape=segment, from=(0, 0), to=(2, 0), label="半径 r"
+}
+```
+
+支持的几何图形：`point`、`segment`、`line`、`circle`、`ellipse`、`polygon`、`rectangle`、`vector`、`parabola`。详见 [SYNTAX_FOR_AI.md](./SYNTAX_FOR_AI.md) 第 4.10 节。
+
 **规则**：
 
-- **定义域必须由用户指定**；未指定则报错（不会自动推断）。
+- **定义域必须由用户指定**（函数曲线）；几何图形的定义域可选（自动估算）。
 - `label` 可选，支持中文。
-- `label` 默认标注在曲线可见部分的几何中点（按弧长）偏上。
+- `label` 默认标注在曲线可见部分的几何中点（按弧长）偏上；几何图形标签锚点因形状而异。
 - 多个标签之间会自动避让（基于 bbox 重叠检测的螺旋外扩算法）。
 - 颜色自动按循环分配。
 - 支持的初等函数 / 常量：`+ - * / ^`、`sin`、`cos`、`tan`、`log`（自然对数）、`ln`、`exp`、`sqrt`、`abs`、`pi`、`e`。
 - 区间 `[a, b]` 中的 `a`、`b` 可以是数字或简单表达式（`pi`、`pi/2`、`-pi`、`2*pi` 等）。
+- 图宽控制：`@plot(width=0.x)` 单图覆盖，或 CLI `--plot-width 0.x` 全局默认。
 
 ---
 
@@ -190,7 +217,7 @@ x^2 + y^2 = 1, x in [-2, 2], y in [-2, 2], label="单位圆"
 | `foo.log` | LaTeX 编译日志（保留中间文件时） |
 | `foo.aux` 等 | LaTeX 其它中间文件（保留中间文件时） |
 
-函数图宽度为 `0.4\textwidth`（在 `.tex` 中通过 `\plotwidth` 命令控制）。
+函数图默认宽度为 `0.7\paperwidth`（页面宽度的 70%），可通过 `@plot(width=0.x)` 单图覆盖或 CLI `--plot-width 0.x` 全局调整。
 
 ---
 

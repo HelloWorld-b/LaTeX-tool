@@ -45,6 +45,13 @@ from .compiler import CompileError, compile_tex_to_png
 
 def run(input_path: str, args: argparse.Namespace) -> int:
     """主流程。返回退出码。"""
+    # 0. 校验参数
+    if not (0 < args.plot_width <= 1.0):
+        sys.stderr.write(
+            f"错误：--plot-width 必须在 (0, 1] 之间，得到 {args.plot_width}\n"
+        )
+        return 4
+
     # 1. 检查输入文件
     if not os.path.isfile(input_path):
         sys.stderr.write(f"错误：输入文件不存在：{input_path}\n")
@@ -103,7 +110,7 @@ def run(input_path: str, args: argparse.Namespace) -> int:
 
     # 5. 生成 .tex
     try:
-        tex_content = generate_tex(blocks, plot_paths)
+        tex_content = generate_tex(blocks, plot_paths, default_plot_width=args.plot_width)
     except Exception as ex:
         sys.stderr.write(f"生成 .tex 失败：{ex}\n")
         return 5
@@ -186,6 +193,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=150,
         help="PNG DPI，默认 150",
+    )
+    p.add_argument(
+        "--plot-width",
+        type=float,
+        default=0.7,
+        help="函数图在文档中的宽度（相对于页面宽度 \\paperwidth，0~1），默认 0.7",
     )
     p.add_argument(
         "--keep-intermediates",

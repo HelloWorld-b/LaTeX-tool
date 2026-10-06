@@ -81,3 +81,20 @@ $$e^{i\pi} + 1 = 0$$
   shape=rectangle, origin=(0, 0), w=3, h=2, label="矩形";
   shape=line, from=(0, 0), to=(1, 1), label="y=x"
 }
+
+## 七、图宽控制
+
+每个 `@plot` 可以单独指定宽度（相对于页面宽度，0~1）。下面三张图分别用
+`width=0.4`、`width=0.7`（默认）、`width=0.9`：
+
+@plot(width=0.4){
+  y = sin(x), x in [-pi, pi], label="sin(x)"
+}
+
+@plot{
+  y = sin(x), x in [-pi, pi], label="sin(x)"
+}
+
+@plot(width=0.9){
+  y = sin(x), x in [-pi, pi], label="sin(x)"
+}

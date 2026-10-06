@@ -50,8 +50,6 @@ _DOCUMENT_PREAMBLE = r"""\documentclass[11pt,a4paper]{ctexart}
   urlcolor=blue,
   pdfborder={0 0 0}
 }
-% 函数图默认宽度
-\newcommand{\plotwidth}{0.4\textwidth}
 % 行内代码样式
 \newcommand{\incode}[1]{\texttt{\small #1}}
 
@@ -110,7 +108,7 @@ def _latex_escape_code(s: str) -> str:
 # Block 节点 → LaTeX 片段
 # ---------------------------------------------------------------------------
 
-def _render_block(node, plot_paths: Dict[int, str]) -> str:
+def _render_block(node, plot_paths: Dict[int, str], default_width: float = 0.7) -> str:
     if isinstance(node, BlankLine):
         return ""  # 段落之间已经用空行分隔
     if isinstance(node, Heading):
@@ -128,11 +126,16 @@ def _render_block(node, plot_paths: Dict[int, str]) -> str:
         path = plot_paths.get(id(node))
         if not path:
             return "% [plot 图缺失，跳过]\n"
-        # 用 \plotwidth 作为宽度
+        # 单图 width 优先，否则用全局默认
+        w = node.width if node.width is not None else default_width
+        # 用 \paperwidth × w 作为宽度，让图溢出正文区居中
+        # \noindent\makebox[\linewidth][c]{...} 让超宽图水平居中
+        include_cmd = "  \\includegraphics[width=" + str(w) + "\\paperwidth]{" + path + "}"
         return (
             "\\begin{figure}[h]\n"
             "\\centering\n"
-            f"\\includegraphics[width=\\plotwidth]{{{path}}}\n"
+            "\\noindent\\makebox[\\linewidth][c]{%\n"
+            + include_cmd + "}%\n"
             "\\end{figure}\n\n"
         )
     if isinstance(node, Table):
@@ -165,12 +168,17 @@ def _render_table(node: Table) -> str:
 # 主入口
 # ---------------------------------------------------------------------------
 
-def generate_tex(blocks: List, plot_paths: Dict[int, str]) -> str:
-    """生成完整 .tex 文件内容。
+def generate_tex(
+    blocks: List,
+    plot_paths: Dict[int, str],
+    default_plot_width: float = 0.7,
+) -> str:
+    r"""生成完整 .tex 文件内容。
 
     参数：
         blocks: parse_document() 返回的 Block 列表
         plot_paths: {id(Plot 节点): PNG 文件名（不含目录，.tex 同目录）}
+        default_plot_width: 全局默认图宽（相对于 \paperwidth，0~1），默认 0.7
     """
     body_parts = []
     # 合并相邻的 ListItem 为单个 itemize 环境
@@ -189,7 +197,7 @@ def generate_tex(blocks: List, plot_paths: Dict[int, str]) -> str:
             parts.append(r"\end{itemize}")
             body_parts.append("\n".join(parts) + "\n\n")
             continue
-        body_parts.append(_render_block(b, plot_paths))
+        body_parts.append(_render_block(b, plot_paths, default_plot_width))
         i += 1
 
     body = "".join(body_parts)
