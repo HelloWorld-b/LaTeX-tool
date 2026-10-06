@@ -1,6 +1,6 @@
 """测试几何图形渲染：8 种 shape + 增强坐标系。"""
 import sys, os
-sys.path.insert(0, "/home/z/my-project")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "python"))
 from mathtext2doc.parser import Plot, PlotItem
 from mathtext2doc.plotter import render_plot, PlotRenderError
 

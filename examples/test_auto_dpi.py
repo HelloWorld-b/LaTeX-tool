@@ -1,6 +1,6 @@
 """测试 auto-DPI：不同显示宽度应产生不同像素尺寸，但有效 DPI 一致。"""
 import sys, os
-sys.path.insert(0, "/home/z/my-project")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "python"))
 from mathtext2doc.parser import Plot, PlotItem
 from mathtext2doc.plotter import render_plot
 from PIL import Image

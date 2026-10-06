@@ -3,12 +3,12 @@
 2. 用 parser 解析生成的文本，看是否有错误
 """
 import sys, os, json, subprocess
-sys.path.insert(0, "/home/z/my-project")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "python"))
 
 from mathtext2doc.parser import parse_document, Plot, PlotParseError, ParseError
 
 # 用 LLM 读 SYNTAX_FOR_AI.md 后生成一个测试输入
-syntax_doc = open("/home/z/my-project/SYNTAX_FOR_AI.md").read()
+syntax_doc = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "python", "SYNTAX_FOR_AI.md")).read()
 
 prompt = f"""你是一个 AI 助手。请阅读以下 mathtext2doc 工具的语法规范文档，然后严格按照规范生成一个输入文本。
 

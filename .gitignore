@@ -70,8 +70,10 @@ credentials.*
 *github_pat*
 *ghp_*
 
-# ============ 测试脚本（可选保留，按需取消注释） ============
-# scripts/test_pipeline.py
+# ============ Python 打包产物（在 python/ 下） ============
+python/build/
+python/dist/
+python/*.egg-info/
 
 # ============ 临时文件 ============
 *.tmp

@@ -6,7 +6,7 @@ import os
 import sys
 
 # 把项目根目录加到 sys.path
-sys.path.insert(0, "/home/z/my-project")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "python"))
 
 from mathtext2doc.parser import parse_document, Plot
 from mathtext2doc.plotter import render_plot
@@ -14,8 +14,9 @@ from mathtext2doc.texgen import generate_tex
 
 
 def main():
-    input_path = "/home/z/my-project/examples/sample_input.txt"
-    out_dir = "/home/z/my-project/examples"
+    _HERE = os.path.dirname(os.path.abspath(__file__))
+    input_path = os.path.join(_HERE, "sample_input.txt")
+    out_dir = _HERE
     base = "sample_input"
 
     with open(input_path, "r", encoding="utf-8") as f:

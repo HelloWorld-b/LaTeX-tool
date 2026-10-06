@@ -10,9 +10,11 @@ import re
 import base64
 import hashlib
 
-WEBAPP_DIR = "/home/z/my-project/webapp"
-LIBS_DIR = "/home/z/my-project/webapp/libs"
-OUT_PATH = "/home/z/my-project/download/mathtext2doc-web.html"
+# 路径基于本文件所在目录（html/），便于整体迁移
+_HERE = os.path.dirname(os.path.abspath(__file__))
+WEBAPP_DIR = os.path.join(_HERE, "webapp")
+LIBS_DIR = os.path.join(_HERE, "webapp", "libs")
+OUT_PATH = os.path.join(_HERE, "mathtext2doc-web.html")
 
 # KaTeX 字体需要 inline 为 base64 data URL
 FONTS_DIR = os.path.join(LIBS_DIR, "fonts")

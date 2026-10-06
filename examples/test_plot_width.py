@@ -1,6 +1,6 @@
 """测试图片宽度调节功能。"""
 import sys, os, tempfile
-sys.path.insert(0, "/home/z/my-project")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "python"))
 from mathtext2doc.parser import parse_document, Plot
 from mathtext2doc.texgen import generate_tex
 
