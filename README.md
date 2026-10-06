@@ -82,7 +82,7 @@ usage: mathtext2doc [-h] [--compiler {xelatex,lualatex,pdflatex}]
 | --- | --- | --- |
 | `input` | 输入文件路径（UTF-8 纯文本） | 必填 |
 | `--compiler` | 指定 LaTeX 编译器：`xelatex` / `lualatex` / `pdflatex` | 自动选择（优先 `xelatex`） |
-| `--dpi` | PNG DPI | `150` |
+| `--dpi` | 目标有效 DPI（每英寸显示长度的像素数）。实际 savefig DPI 会根据每个 `@plot` 的显示宽度自动调整，保持有效分辨率一致 | `150` |
 | `--plot-width` | 函数图在文档中的宽度（相对于 `\paperwidth`，0~1） | `0.7` |
 | `--keep-intermediates` | 保留函数图 PNG 和 `.log`/`.pdf`/`.aux` 等中间文件 | 默认开启 |
 | `--no-keep-intermediates` | 不保留中间文件（仅保留最终 PNG 和 `.tex`） | — |
@@ -218,6 +218,8 @@ x^2 + y^2 = 1, x in [-2, 2], y in [-2, 2], label="单位圆"
 | `foo.aux` 等 | LaTeX 其它中间文件（保留中间文件时） |
 
 函数图默认宽度为 `0.7\paperwidth`（页面宽度的 70%），可通过 `@plot(width=0.x)` 单图覆盖或 CLI `--plot-width 0.x` 全局调整。
+
+**Auto-DPI**：每个函数图 PNG 的实际像素尺寸会根据其显示宽度自动调整，保持有效分辨率一致（默认 150 DPI）。大图（如 `width=0.9`）会渲染更多像素，小图（如 `width=0.4`）渲染更少像素，避免大图糊或小图浪费。savefig DPI 范围 `[80, 400]`，极端宽度会触底/触顶保护。
 
 ---
 

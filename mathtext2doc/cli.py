@@ -101,8 +101,11 @@ def run(input_path: str, args: argparse.Namespace) -> int:
             plot_idx += 1
             png_name = f"{base}-plot{plot_idx}.png"
             png_path = os.path.join(out_dir, png_name)
+            # 计算该图的有效显示宽度（单图 width 优先，否则全局默认）
+            # 用于 auto-DPI：让大图小图都有相同的有效分辨率
+            effective_width = b.width if b.width is not None else args.plot_width
             try:
-                render_plot(b, png_path, dpi=args.dpi)
+                render_plot(b, png_path, dpi=args.dpi, display_width=effective_width)
             except PlotRenderError as ex:
                 sys.stderr.write(f"绘图错误（第 {plot_idx} 个 @plot）：{ex}\n")
                 return 2
@@ -192,7 +195,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--dpi",
         type=int,
         default=150,
-        help="PNG DPI，默认 150",
+        help="目标有效 DPI（每英寸显示长度的像素数），默认 150。"
+             "实际 savefig DPI 会根据每个 @plot 的显示宽度自动调整，"
+             "保持有效分辨率一致：大图高分、小图低分",
     )
     p.add_argument(
         "--plot-width",

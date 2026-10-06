@@ -581,13 +581,43 @@ def _bbox_overlap(a, b) -> bool:
 # 主入口
 # ---------------------------------------------------------------------------
 
-def render_plot(plot: Plot, out_path: str, dpi: int = 150) -> str:
-    """渲染一张 plot 到 PNG。
+def render_plot(
+    plot: Plot,
+    out_path: str,
+    dpi: int = 150,
+    display_width: Optional[float] = None,
+) -> str:
+    r"""渲染一张 plot 到 PNG。
+
+    参数：
+        plot: Plot 节点
+        out_path: 输出 PNG 路径
+        dpi: 目标有效 DPI（每英寸显示长度的像素数）。若 display_width 给定，
+             实际 savefig dpi 会自动调整以保持此有效分辨率一致。
+        display_width: 图在文档中的显示宽度（相对于 \paperwidth，0~1）。
+                       给定时启用 auto-DPI；为 None 时直接用 dpi 作为 savefig dpi。
 
     返回 out_path。
     """
     if not plot.items:
         raise PlotRenderError("@plot 指令没有任何绘制项")
+
+    # ---------- 计算 savefig dpi（auto-DPI）----------
+    # 思路：无论图显示多大，保证"每英寸显示长度的像素数"≈ dpi，
+    # 这样大图小图都有相同的视觉清晰度，不浪费像素也不糊。
+    #   display_inches = display_width × paperwidth_inches
+    #   pixel_width = display_inches × dpi
+    #   savefig_dpi = pixel_width / figsize_width
+    _FIGSIZE_WIDTH = 5.0           # 当前 figsize=(5, 4) 的宽度
+    _PAPERWIDTH_INCHES = 8.27      # A4 纸宽 21cm
+    _MIN_DPI = 80                  # 下限：避免小图文字锯齿
+    _MAX_DPI = 400                 # 上限：避免大图文件过大
+    if display_width is not None:
+        display_inches = display_width * _PAPERWIDTH_INCHES
+        auto_dpi = display_inches * dpi / _FIGSIZE_WIDTH
+        savefig_dpi = max(_MIN_DPI, min(_MAX_DPI, auto_dpi))
+    else:
+        savefig_dpi = float(dpi)
 
     # ---------- 决定坐标范围 ----------
     # 函数曲线项必须有 x_range（parser 已校验），几何图形项的 x_range 可选
@@ -692,7 +722,7 @@ def render_plot(plot: Plot, out_path: str, dpi: int = 150) -> str:
     renderer = fig.canvas.get_renderer()
     _resolve_label_anchor(ax, curves, renderer)
 
-    fig.savefig(out_path, dpi=dpi)
+    fig.savefig(out_path, dpi=savefig_dpi)
     plt.close(fig)
     return out_path
 

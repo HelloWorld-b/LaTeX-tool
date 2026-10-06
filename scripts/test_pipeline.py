@@ -35,8 +35,10 @@ def main():
             plot_idx += 1
             png_name = f"{base}-plot{plot_idx}.png"
             png_path = os.path.join(out_dir, png_name)
-            print(f"  渲染第 {plot_idx} 个 plot → {png_name}")
-            render_plot(b, png_path, dpi=150)
+            # 模拟 CLI 的 auto-DPI 行为：传 display_width
+            effective_width = b.width if b.width is not None else 0.7
+            print(f"  渲染第 {plot_idx} 个 plot (width={effective_width}) → {png_name}")
+            render_plot(b, png_path, dpi=150, display_width=effective_width)
             plot_paths[id(b)] = png_name
 
     print("\n=== 步骤 3：生成 .tex ===")
