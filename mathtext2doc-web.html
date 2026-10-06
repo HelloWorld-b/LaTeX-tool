@@ -311,9 +311,15 @@ body {
 }
 .preview-content h1 { font-size: 24px; margin: 16px 0 12px; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 6px; }
 .preview-content h2 { font-size: 19px; margin: 14px 0 10px; color: #34495e; }
+.preview-content h3 { font-size: 16px; margin: 12px 0 8px; color: #34495e; }
+.preview-content h4 { font-size: 14px; margin: 10px 0 6px; color: #555; font-weight: 600; }
 .preview-content p { margin: 8px 0; }
-.preview-content ul { margin: 8px 0 8px 24px; }
+.preview-content ul, .preview-content ol { margin: 8px 0 8px 24px; }
 .preview-content li { margin: 4px 0; }
+.preview-content blockquote { margin: 12px 0; padding: 8px 16px; border-left: 4px solid #3498db; background: #f8f9fa; color: #555; }
+.preview-content blockquote p { margin: 4px 0; }
+.preview-content hr { border: none; border-top: 1px solid #ddd; margin: 16px 0; }
+.preview-content em { font-style: italic; }
 .preview-content table { border-collapse: collapse; margin: 12px 0; width: 100%; }
 .preview-content th, .preview-content td { border: 1px solid #ddd; padding: 6px 12px; text-align: left; }
 .preview-content th { background: #f0f0f0; font-weight: 600; }
@@ -476,10 +482,13 @@ class Node {}
 class Text extends Node { constructor(t) { super(); this.text = t; } }
 class InlineMath extends Node { constructor(latex) { super(); this.latex = latex; } }
 class Bold extends Node { constructor(segs) { super(); this.segments = segs; } }
+class Italic extends Node { constructor(segs) { super(); this.segments = segs; } }
 class Code extends Node { constructor(c) { super(); this.code = c; } }
 class Heading extends Node { constructor(level, segs) { super(); this.level = level; this.segments = segs; } }
 class Paragraph extends Node { constructor(segs) { super(); this.segments = segs; } }
-class ListItem extends Node { constructor(segs) { super(); this.segments = segs; } }
+class ListItem extends Node { constructor(segs, ordered = false, orderNum = 0) { super(); this.segments = segs; this.ordered = ordered; this.orderNum = orderNum; } }
+class Blockquote extends Node { constructor(blocks) { super(); this.blocks = blocks; } }
+class HorizontalRule extends Node {}
 class Table extends Node { constructor(header, rows) { super(); this.header = header; this.rows = rows; } }
 class DisplayMath extends Node { constructor(latex) { super(); this.latex = latex; } }
 class PlotItemNode extends Node {
@@ -729,6 +738,14 @@ function parseInline(text) {
       if (j === -1) { out.push(new Text(latexEscape('**'))); i += 2; continue; }
       out.push(new Bold(parseInline(text.slice(i + 2, j))));
       i = j + 2;
+    } else if (ch === '*') {
+      // *italic*（单个星号）
+      const j = text.indexOf('*', i + 1);
+      if (j === -1) { out.push(new Text(latexEscape(ch))); i++; continue; }
+      const inner = text.slice(i + 1, j);
+      if (!inner) { out.push(new Text(latexEscape('*'))); i++; continue; }
+      out.push(new Italic(parseInline(inner)));
+      i = j + 1;
     } else if (ch === '`') {
       const j = text.indexOf('`', i + 1);
       if (j === -1) { out.push(new Text(latexEscape(ch))); i++; continue; }
@@ -736,7 +753,7 @@ function parseInline(text) {
       i = j + 1;
     } else {
       let k = i;
-      while (k < text.length && text[k] !== '$' && text[k] !== '`' && !text.startsWith('**', k)) k++;
+      while (k < text.length && text[k] !== '$' && text[k] !== '`' && text[k] !== '*' && !text.startsWith('**', k)) k++;
       out.push(new Text(latexEscape(text.slice(i, k))));
       i = k;
     }
@@ -773,8 +790,11 @@ function parseTable(lines) {
 // ---------------------------------------------------------------------------
 // 主解析入口
 // ---------------------------------------------------------------------------
-const HEADING_RE = /^(#{1,2})\s+(.*)$/;
+const HEADING_RE = /^(#{1,4})\s+(.*)$/;
 const LIST_RE = /^-\s+(.*)$/;
+const OLIST_RE = /^(\d+)\.\s+(.*)$/;
+const HR_RE = /^(-{3,}|\*{3,}|_{3,})\s*$/;
+const QUOTE_RE = /^>\s?(.*)$/;
 function parseDocument(text) {
   // 1. 抽出 @plot{...}
   const plots = [];
@@ -816,14 +836,35 @@ function parseDocument(text) {
     if (m = line.trim().match(/^\x00PLOT(\d+)\x00$/)) {
       blocks.push(plots[+m[1]]); i++; continue;
     }
-    // 标题
+    // 标题（1~4 级）
     if (m = line.match(HEADING_RE)) {
       blocks.push(new Heading(m[1].length, parseInline(m[2].trim())));
       i++; continue;
     }
-    // 列表项
+    // 分隔线 --- *** ___
+    if (HR_RE.test(line)) {
+      blocks.push(new HorizontalRule());
+      i++; continue;
+    }
+    // 引用块 > text
+    if (m = line.match(QUOTE_RE)) {
+      const quoteLines = [];
+      while (i < n && (m = lines[i].match(QUOTE_RE))) {
+        quoteLines.push(m[1]);
+        i++;
+      }
+      const quoteText = quoteLines.join('\n');
+      blocks.push(new Blockquote(parseDocument(quoteText)));
+      continue;
+    }
+    // 无序列表项
     if (m = line.match(LIST_RE)) {
-      blocks.push(new ListItem(parseInline(m[1].trim())));
+      blocks.push(new ListItem(parseInline(m[1].trim()), false, 0));
+      i++; continue;
+    }
+    // 有序列表项 1. 2. 3.
+    if (m = line.match(OLIST_RE)) {
+      blocks.push(new ListItem(parseInline(m[2].trim()), true, parseInt(m[1])));
       i++; continue;
     }
     // 表格
@@ -838,7 +879,8 @@ function parseDocument(text) {
     i++;
     while (i < n) {
       const nxt = lines[i];
-      if (!nxt.trim() || HEADING_RE.test(nxt) || LIST_RE.test(nxt) || isTableRow(nxt)
+      if (!nxt.trim() || HEADING_RE.test(nxt) || LIST_RE.test(nxt) || OLIST_RE.test(nxt)
+          || HR_RE.test(nxt) || QUOTE_RE.test(nxt) || isTableRow(nxt)
           || /^\x00DM(\d+)\x00$/.test(nxt.trim()) || /^\x00PLOT(\d+)\x00$/.test(nxt.trim())) break;
       paraBuf.push(nxt); i++;
     }
@@ -1280,6 +1322,7 @@ function renderInline(segments) {
       } catch (e) { return `<code>${seg.latex}</code>`; }
     }
     if (seg instanceof Bold) return `<strong>${renderInline(seg.segments)}</strong>`;
+    if (seg instanceof Italic) return `<em>${renderInline(seg.segments)}</em>`;
     if (seg instanceof Code) return `<code>${escapeHtml(seg.code)}</code>`;
     return '';
   }).join('');
@@ -1316,7 +1359,7 @@ function renderDocument(blocks, container, opts = {}) {
       while (i < blocks.length && blocks[i] instanceof ListItem) {
         items.push(blocks[i]); i++;
       }
-      merged.push({ type: 'list', items });
+      merged.push({ type: 'list', items, ordered: items[0].ordered });
     } else {
       merged.push(blocks[i]); i++;
     }
@@ -1326,21 +1369,39 @@ function renderDocument(blocks, container, opts = {}) {
     if (block instanceof BlankLine) continue;
 
     if (block.type === 'list') {
-      const ul = document.createElement('ul');
+      const tag = block.ordered ? 'ol' : 'ul';
+      const list = document.createElement(tag);
       for (const it of block.items) {
         const li = document.createElement('li');
         li.innerHTML = renderInline(it.segments);
-        ul.appendChild(li);
+        list.appendChild(li);
       }
-      container.appendChild(ul);
+      container.appendChild(list);
       continue;
     }
 
     if (block instanceof Heading) {
-      const tag = block.level === 1 ? 'h1' : 'h2';
+      // 1~4 级 → h1~h4
+      const tag = 'h' + Math.min(4, Math.max(1, block.level));
       const el = document.createElement(tag);
       el.innerHTML = renderInline(block.segments);
       container.appendChild(el);
+      continue;
+    }
+
+    if (block instanceof HorizontalRule) {
+      const hr = document.createElement('hr');
+      container.appendChild(hr);
+      continue;
+    }
+
+    if (block instanceof Blockquote) {
+      const bq = document.createElement('blockquote');
+      // 递归渲染引用内容到一个临时容器，再移动到 blockquote
+      const tmp = document.createElement('div');
+      renderDocument(block.blocks, tmp, opts);
+      while (tmp.firstChild) bq.appendChild(tmp.firstChild);
+      container.appendChild(bq);
       continue;
     }
 
@@ -1460,23 +1521,39 @@ function generateTex(blocks, opts = {}) {
       while (i < blocks.length && blocks[i] instanceof ListItem) {
         items.push(blocks[i]); i++;
       }
-      merged.push({ type: 'list', items });
+      merged.push({ type: 'list', items, ordered: items[0].ordered });
     } else { merged.push(blocks[i]); i++; }
   }
 
   for (const block of merged) {
     if (block instanceof BlankLine) continue;
     if (block.type === 'list') {
-      parts.push('\\begin{itemize}\n');
+      const env = block.ordered ? 'enumerate' : 'itemize';
+      parts.push(`\\begin{${env}}\n`);
       for (const it of block.items) {
         parts.push('\\item ' + renderInlineTex(it.segments) + '\n');
       }
-      parts.push('\\end{itemize}\n\n');
+      parts.push(`\\end{${env}}\n\n`);
       continue;
     }
     if (block instanceof Heading) {
-      const cmd = block.level === 1 ? 'section' : 'subsection';
+      const cmds = {1:'section', 2:'subsection', 3:'subsubsection', 4:'paragraph'};
+      const cmd = cmds[block.level] || 'paragraph';
       parts.push(`\\${cmd}{${renderInlineTex(block.segments)}}\n`);
+      continue;
+    }
+    if (block instanceof HorizontalRule) {
+      parts.push('\\noindent\\rule{\\linewidth}{0.4pt}\n\n');
+      continue;
+    }
+    if (block instanceof Blockquote) {
+      parts.push('\\begin{quote}\n');
+      // 递归生成引用内容
+      const innerTex = generateTex(block.blocks, { defaultPlotWidth: opts.defaultPlotWidth });
+      // 提取 \begin{document} 和 \end{document} 之间的内容
+      const m = innerTex.match(/\\begin\{document\}([\s\S]*?)\\end\{document\}/);
+      if (m) parts.push(m[1].trim() + '\n');
+      parts.push('\\end{quote}\n\n');
       continue;
     }
     if (block instanceof Paragraph) {
@@ -1507,6 +1584,7 @@ function renderInlineTex(segments) {
     if (seg instanceof Text) return seg.text;
     if (seg instanceof InlineMath) return `$${seg.latex}$`;
     if (seg instanceof Bold) return `\\textbf{${renderInlineTex(seg.segments)}}`;
+    if (seg instanceof Italic) return `\\textit{${renderInlineTex(seg.segments)}}`;
     if (seg instanceof Code) {
       let s = seg.code;
       for (const [ch, rep] of [['\\','\\textbackslash{}'],['&','\\&'],['%','\\%'],['$','\\$'],['#','\\#'],['_','\\_'],['{','\\{'],['}','\\}'],['~','\\textasciitilde{}'],['^','\\textasciicircum{}']]) {

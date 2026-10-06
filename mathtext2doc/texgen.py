@@ -19,11 +19,14 @@ from typing import Dict, List, Optional
 
 from .parser import (
     BlankLine,
+    Blockquote,
     Bold,
     Code,
     DisplayMath,
     Heading,
+    HorizontalRule,
     InlineMath,
+    Italic,
     ListItem,
     Paragraph,
     Plot,
@@ -79,10 +82,10 @@ def _render_inline_node(node) -> str:
         return f"${node.latex}$"
     if isinstance(node, Bold):
         return r"\textbf{" + _render_inline(node.segments) + "}"
+    if isinstance(node, Italic):
+        return r"\textit{" + _render_inline(node.segments) + "}"
     if isinstance(node, Code):
-        # 行内代码：把特殊字符再转义一次（parser 没有转义 code 内容）
         return r"\incode{" + _latex_escape_code(node.code) + "}"
-    # 兜底
     return ""
 
 
@@ -110,26 +113,32 @@ def _latex_escape_code(s: str) -> str:
 
 def _render_block(node, plot_paths: Dict[int, str], default_width: float = 0.7) -> str:
     if isinstance(node, BlankLine):
-        return ""  # 段落之间已经用空行分隔
+        return ""
     if isinstance(node, Heading):
-        cmd = "section" if node.level == 1 else "subsection"
+        # 1=section 2=subsection 3=subsubsection 4=paragraph
+        cmds = {1: "section", 2: "subsection", 3: "subsubsection", 4: "paragraph"}
+        cmd = cmds.get(node.level, "paragraph")
         return f"\\{cmd}{{{_render_inline(node.segments)}}}\n"
     if isinstance(node, Paragraph):
         return _render_inline(node.segments) + "\n\n"
     if isinstance(node, ListItem):
-        return r"\begin{itemize}" + "\n" + \
-               r"\item " + _render_inline(node.segments) + "\n" + \
-               r"\end{itemize}" + "\n"
+        # ListItem 的合并由 generate_tex 处理（itemize/enumerate 环境）
+        # 这里只渲染单个项的内容（不应被直接调用）
+        return r"\item " + _render_inline(node.segments) + "\n"
+    if isinstance(node, HorizontalRule):
+        # 分隔线：用 \noindent\rule{\linewidth}{0.4pt}
+        return r"\noindent\rule{\linewidth}{0.4pt}" + "\n\n"
+    if isinstance(node, Blockquote):
+        # 引用块：quote 环境
+        inner = "".join(_render_block(b, plot_paths, default_width) for b in node.blocks)
+        return "\\begin{quote}\n" + inner + "\\end{quote}\n\n"
     if isinstance(node, DisplayMath):
         return "\\begin{equation*}\n" + node.latex + "\n\\end{equation*}\n\n"
     if isinstance(node, Plot):
         path = plot_paths.get(id(node))
         if not path:
             return "% [plot 图缺失，跳过]\n"
-        # 单图 width 优先，否则用全局默认
         w = node.width if node.width is not None else default_width
-        # 用 \paperwidth × w 作为宽度，让图溢出正文区居中
-        # \noindent\makebox[\linewidth][c]{...} 让超宽图水平居中
         include_cmd = "  \\includegraphics[width=" + str(w) + "\\paperwidth]{" + path + "}"
         return (
             "\\begin{figure}[h]\n"
@@ -181,7 +190,7 @@ def generate_tex(
         default_plot_width: 全局默认图宽（相对于 \paperwidth，0~1），默认 0.7
     """
     body_parts = []
-    # 合并相邻的 ListItem 为单个 itemize 环境
+    # 合并相邻的 ListItem 为 itemize（无序）或 enumerate（有序）环境
     i = 0
     n = len(blocks)
     while i < n:
@@ -191,10 +200,13 @@ def generate_tex(
             while i < n and isinstance(blocks[i], ListItem):
                 items.append(blocks[i])
                 i += 1
-            parts = [r"\begin{itemize}"]
+            # 根据第一项的 ordered 决定环境类型
+            is_ordered = items[0].ordered
+            env = "enumerate" if is_ordered else "itemize"
+            parts = [r"\begin{" + env + "}"]
             for it in items:
                 parts.append(r"\item " + _render_inline(it.segments))
-            parts.append(r"\end{itemize}")
+            parts.append(r"\end{" + env + "}")
             body_parts.append("\n".join(parts) + "\n\n")
             continue
         body_parts.append(_render_block(b, plot_paths, default_plot_width))

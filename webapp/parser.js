@@ -12,10 +12,13 @@ class Node {}
 class Text extends Node { constructor(t) { super(); this.text = t; } }
 class InlineMath extends Node { constructor(latex) { super(); this.latex = latex; } }
 class Bold extends Node { constructor(segs) { super(); this.segments = segs; } }
+class Italic extends Node { constructor(segs) { super(); this.segments = segs; } }
 class Code extends Node { constructor(c) { super(); this.code = c; } }
 class Heading extends Node { constructor(level, segs) { super(); this.level = level; this.segments = segs; } }
 class Paragraph extends Node { constructor(segs) { super(); this.segments = segs; } }
-class ListItem extends Node { constructor(segs) { super(); this.segments = segs; } }
+class ListItem extends Node { constructor(segs, ordered = false, orderNum = 0) { super(); this.segments = segs; this.ordered = ordered; this.orderNum = orderNum; } }
+class Blockquote extends Node { constructor(blocks) { super(); this.blocks = blocks; } }
+class HorizontalRule extends Node {}
 class Table extends Node { constructor(header, rows) { super(); this.header = header; this.rows = rows; } }
 class DisplayMath extends Node { constructor(latex) { super(); this.latex = latex; } }
 class PlotItemNode extends Node {
@@ -265,6 +268,14 @@ function parseInline(text) {
       if (j === -1) { out.push(new Text(latexEscape('**'))); i += 2; continue; }
       out.push(new Bold(parseInline(text.slice(i + 2, j))));
       i = j + 2;
+    } else if (ch === '*') {
+      // *italic*（单个星号）
+      const j = text.indexOf('*', i + 1);
+      if (j === -1) { out.push(new Text(latexEscape(ch))); i++; continue; }
+      const inner = text.slice(i + 1, j);
+      if (!inner) { out.push(new Text(latexEscape('*'))); i++; continue; }
+      out.push(new Italic(parseInline(inner)));
+      i = j + 1;
     } else if (ch === '`') {
       const j = text.indexOf('`', i + 1);
       if (j === -1) { out.push(new Text(latexEscape(ch))); i++; continue; }
@@ -272,7 +283,7 @@ function parseInline(text) {
       i = j + 1;
     } else {
       let k = i;
-      while (k < text.length && text[k] !== '$' && text[k] !== '`' && !text.startsWith('**', k)) k++;
+      while (k < text.length && text[k] !== '$' && text[k] !== '`' && text[k] !== '*' && !text.startsWith('**', k)) k++;
       out.push(new Text(latexEscape(text.slice(i, k))));
       i = k;
     }
@@ -309,8 +320,11 @@ function parseTable(lines) {
 // ---------------------------------------------------------------------------
 // 主解析入口
 // ---------------------------------------------------------------------------
-const HEADING_RE = /^(#{1,2})\s+(.*)$/;
+const HEADING_RE = /^(#{1,4})\s+(.*)$/;
 const LIST_RE = /^-\s+(.*)$/;
+const OLIST_RE = /^(\d+)\.\s+(.*)$/;
+const HR_RE = /^(-{3,}|\*{3,}|_{3,})\s*$/;
+const QUOTE_RE = /^>\s?(.*)$/;
 
 export function parseDocument(text) {
   // 1. 抽出 @plot{...}
@@ -353,14 +367,35 @@ export function parseDocument(text) {
     if (m = line.trim().match(/^\x00PLOT(\d+)\x00$/)) {
       blocks.push(plots[+m[1]]); i++; continue;
     }
-    // 标题
+    // 标题（1~4 级）
     if (m = line.match(HEADING_RE)) {
       blocks.push(new Heading(m[1].length, parseInline(m[2].trim())));
       i++; continue;
     }
-    // 列表项
+    // 分隔线 --- *** ___
+    if (HR_RE.test(line)) {
+      blocks.push(new HorizontalRule());
+      i++; continue;
+    }
+    // 引用块 > text
+    if (m = line.match(QUOTE_RE)) {
+      const quoteLines = [];
+      while (i < n && (m = lines[i].match(QUOTE_RE))) {
+        quoteLines.push(m[1]);
+        i++;
+      }
+      const quoteText = quoteLines.join('\n');
+      blocks.push(new Blockquote(parseDocument(quoteText)));
+      continue;
+    }
+    // 无序列表项
     if (m = line.match(LIST_RE)) {
-      blocks.push(new ListItem(parseInline(m[1].trim())));
+      blocks.push(new ListItem(parseInline(m[1].trim()), false, 0));
+      i++; continue;
+    }
+    // 有序列表项 1. 2. 3.
+    if (m = line.match(OLIST_RE)) {
+      blocks.push(new ListItem(parseInline(m[2].trim()), true, parseInt(m[1])));
       i++; continue;
     }
     // 表格
@@ -375,7 +410,8 @@ export function parseDocument(text) {
     i++;
     while (i < n) {
       const nxt = lines[i];
-      if (!nxt.trim() || HEADING_RE.test(nxt) || LIST_RE.test(nxt) || isTableRow(nxt)
+      if (!nxt.trim() || HEADING_RE.test(nxt) || LIST_RE.test(nxt) || OLIST_RE.test(nxt)
+          || HR_RE.test(nxt) || QUOTE_RE.test(nxt) || isTableRow(nxt)
           || /^\x00DM(\d+)\x00$/.test(nxt.trim()) || /^\x00PLOT(\d+)\x00$/.test(nxt.trim())) break;
       paraBuf.push(nxt); i++;
     }
@@ -385,7 +421,7 @@ export function parseDocument(text) {
 }
 
 export {
-  Node, Text, InlineMath, Bold, Code, Heading, Paragraph, ListItem,
-  Table, DisplayMath, PlotItemNode, Plot, BlankLine,
+  Node, Text, InlineMath, Bold, Italic, Code, Heading, Paragraph, ListItem,
+  Blockquote, HorizontalRule, Table, DisplayMath, PlotItemNode, Plot, BlankLine,
   ParseError, PlotParseError, latexEscape,
 };

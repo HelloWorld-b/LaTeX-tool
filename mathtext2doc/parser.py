@@ -53,13 +53,18 @@ class Bold:
 
 
 @dataclass
+class Italic:
+    segments: list
+
+
+@dataclass
 class Code:
     code: str
 
 
 @dataclass
 class Heading:
-    level: int
+    level: int            # 1~4（# / ## / ### / ####）
     segments: list
 
 
@@ -71,6 +76,14 @@ class Paragraph:
 @dataclass
 class ListItem:
     segments: list
+    ordered: bool = False        # 是否有序列表项
+    order_num: int = 0           # 有序列表序号（1, 2, 3...）
+
+
+@dataclass
+class Blockquote:
+    """引用块 > text，可含多段。blocks 为嵌套的 Block 列表。"""
+    blocks: list
 
 
 @dataclass
@@ -111,6 +124,12 @@ class Plot:
 
 @dataclass
 class BlankLine:
+    pass
+
+
+@dataclass
+class HorizontalRule:
+    """分隔线 --- 或 *** 或 ___"""
     pass
 
 
@@ -492,10 +511,16 @@ _INLINE_MATH_RE = re.compile(r"\$([^$\n]+)\$")
 _BOLD_RE = re.compile(r"\*\*([^*]+)\*\*")
 # 行内代码 `...`
 _CODE_RE = re.compile(r"`([^`]+)`")
-# 标题
-_HEADING_RE = re.compile(r"^(#{1,2})\s+(.*)$")
-# 列表项
+# 标题（1~4 级）
+_HEADING_RE = re.compile(r"^(#{1,4})\s+(.*)$")
+# 无序列表项
 _LIST_RE = re.compile(r"^-\s+(.*)$")
+# 有序列表项
+_OLIST_RE = re.compile(r"^(\d+)\.\s+(.*)$")
+# 分隔线
+_HR_RE = re.compile(r"^(-{3,}|\*{3,}|_{3,})\s*$")
+# 引用块
+_QUOTE_RE = re.compile(r"^>\s?(.*)$")
 # 表格分隔行
 _TABLE_SEP_RE = re.compile(r"^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$")
 
@@ -503,38 +528,45 @@ _TABLE_SEP_RE = re.compile(r"^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$")
 def _parse_inline(text: str) -> list:
     """解析一段行内文本，返回 Inline 节点列表。
 
-    顺序：先抽出 $...$ 公式，再处理 **bold**，再处理 `code`。
+    识别：$...$ 公式、**bold**、*italic*、`code`
+    注意：** 必须比 * 先匹配（否则 *italic* 会被当成两个 * 单字符）
     """
-    # 第一步：把 $...$ 段落抽出来，用占位符替换，避免被转义/被 Bold 拦截。
-    placeholders = []
     buf = text
-    # 我们用迭代方式扫描
     out: list = []
     i = 0
     while i < len(buf):
         ch = buf[i]
         if ch == "$":
-            # 找闭合 $
             j = buf.find("$", i + 1)
             if j == -1:
-                # 没闭合，按普通字符处理
                 out.append(Text(latex_escape(ch)))
                 i += 1
                 continue
-            latex = buf[i + 1:j]
-            out.append(InlineMath(latex))
+            out.append(InlineMath(buf[i + 1:j]))
             i = j + 1
         elif buf.startswith("**", i):
-            # 找闭合 **
             j = buf.find("**", i + 2)
             if j == -1:
                 out.append(Text(latex_escape("**")))
                 i += 2
                 continue
-            inner = buf[i + 2:j]
-            # 递归解析内部（粗体内可以包含公式）
-            out.append(Bold(_parse_inline(inner)))
+            out.append(Bold(_parse_inline(buf[i + 2:j])))
             i = j + 2
+        elif ch == "*":
+            # *italic*（单个星号）
+            j = buf.find("*", i + 1)
+            if j == -1:
+                out.append(Text(latex_escape(ch)))
+                i += 1
+                continue
+            inner = buf[i + 1:j]
+            # 避免空 italic
+            if not inner:
+                out.append(Text(latex_escape("*")))
+                i += 1
+                continue
+            out.append(Italic(_parse_inline(inner)))
+            i = j + 1
         elif ch == "`":
             j = buf.find("`", i + 1)
             if j == -1:
@@ -544,9 +576,8 @@ def _parse_inline(text: str) -> list:
             out.append(Code(buf[i + 1:j]))
             i = j + 1
         else:
-            # 累积一段普通文本，直到遇到下一个特殊字符
             k = i
-            while k < len(buf) and buf[k] not in "$`" and not buf.startswith("**", k):
+            while k < len(buf) and buf[k] not in "$`*" and not buf.startswith("**", k):
                 k += 1
             chunk = buf[i:k]
             out.append(Text(latex_escape(chunk)))
@@ -651,7 +682,7 @@ def parse_document(text: str) -> List:
             i += 1
             continue
 
-        # 标题
+        # 标题（1~4 级）
         m = _HEADING_RE.match(line)
         if m:
             level = len(m.group(1))
@@ -660,17 +691,44 @@ def parse_document(text: str) -> List:
             i += 1
             continue
 
-        # 列表项（连续的 - 开头行视为一个列表，这里简化为逐行 ListItem）
+        # 分隔线 --- *** ___
+        if _HR_RE.match(line):
+            blocks.append(HorizontalRule())
+            i += 1
+            continue
+
+        # 引用块 > text（连续多行 > 合并成一个 Blockquote）
+        if _QUOTE_RE.match(line):
+            quote_lines = []
+            while i < n and _QUOTE_RE.match(lines[i]):
+                m_q = _QUOTE_RE.match(lines[i])
+                quote_lines.append(m_q.group(1))
+                i += 1
+            # 递归解析引用内容
+            quote_text = "\n".join(quote_lines)
+            quote_blocks = parse_document(quote_text)
+            blocks.append(Blockquote(blocks=quote_blocks))
+            continue
+
+        # 无序列表项 -
         m = _LIST_RE.match(line)
         if m:
             content = m.group(1).strip()
-            blocks.append(ListItem(segments=_parse_inline(content)))
+            blocks.append(ListItem(segments=_parse_inline(content), ordered=False))
+            i += 1
+            continue
+
+        # 有序列表项 1. 2. 3.
+        m = _OLIST_RE.match(line)
+        if m:
+            num = int(m.group(1))
+            content = m.group(2).strip()
+            blocks.append(ListItem(segments=_parse_inline(content), ordered=True, order_num=num))
             i += 1
             continue
 
         # 表格
         if _is_table_row(line):
-            # 收集连续表格行
             tbl_lines = []
             while i < n and _is_table_row(lines[i]):
                 tbl_lines.append(lines[i])
@@ -688,6 +746,9 @@ def parse_document(text: str) -> List:
                 not nxt.strip()
                 or _HEADING_RE.match(nxt)
                 or _LIST_RE.match(nxt)
+                or _OLIST_RE.match(nxt)
+                or _HR_RE.match(nxt)
+                or _QUOTE_RE.match(nxt)
                 or _is_table_row(nxt)
                 or re.match(r"^\x00DISPLAYMATH(\d+)\x00$", nxt.strip())
                 or re.match(r"^\x00PLOT(\d+)\x00$", nxt.strip())

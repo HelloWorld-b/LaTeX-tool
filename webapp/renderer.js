@@ -7,8 +7,8 @@
 
 import { renderPlot } from './plotter.js';
 import {
-  Text, InlineMath, Bold, Code, Heading, Paragraph, ListItem,
-  Table, DisplayMath, PlotItemNode, Plot, BlankLine,
+  Text, InlineMath, Bold, Italic, Code, Heading, Paragraph, ListItem,
+  Blockquote, HorizontalRule, Table, DisplayMath, PlotItemNode, Plot, BlankLine,
 } from './parser.js';
 
 /**
@@ -23,6 +23,7 @@ function renderInline(segments) {
       } catch (e) { return `<code>${seg.latex}</code>`; }
     }
     if (seg instanceof Bold) return `<strong>${renderInline(seg.segments)}</strong>`;
+    if (seg instanceof Italic) return `<em>${renderInline(seg.segments)}</em>`;
     if (seg instanceof Code) return `<code>${escapeHtml(seg.code)}</code>`;
     return '';
   }).join('');
@@ -59,7 +60,7 @@ export function renderDocument(blocks, container, opts = {}) {
       while (i < blocks.length && blocks[i] instanceof ListItem) {
         items.push(blocks[i]); i++;
       }
-      merged.push({ type: 'list', items });
+      merged.push({ type: 'list', items, ordered: items[0].ordered });
     } else {
       merged.push(blocks[i]); i++;
     }
@@ -69,21 +70,39 @@ export function renderDocument(blocks, container, opts = {}) {
     if (block instanceof BlankLine) continue;
 
     if (block.type === 'list') {
-      const ul = document.createElement('ul');
+      const tag = block.ordered ? 'ol' : 'ul';
+      const list = document.createElement(tag);
       for (const it of block.items) {
         const li = document.createElement('li');
         li.innerHTML = renderInline(it.segments);
-        ul.appendChild(li);
+        list.appendChild(li);
       }
-      container.appendChild(ul);
+      container.appendChild(list);
       continue;
     }
 
     if (block instanceof Heading) {
-      const tag = block.level === 1 ? 'h1' : 'h2';
+      // 1~4 级 → h1~h4
+      const tag = 'h' + Math.min(4, Math.max(1, block.level));
       const el = document.createElement(tag);
       el.innerHTML = renderInline(block.segments);
       container.appendChild(el);
+      continue;
+    }
+
+    if (block instanceof HorizontalRule) {
+      const hr = document.createElement('hr');
+      container.appendChild(hr);
+      continue;
+    }
+
+    if (block instanceof Blockquote) {
+      const bq = document.createElement('blockquote');
+      // 递归渲染引用内容到一个临时容器，再移动到 blockquote
+      const tmp = document.createElement('div');
+      renderDocument(block.blocks, tmp, opts);
+      while (tmp.firstChild) bq.appendChild(tmp.firstChild);
+      container.appendChild(bq);
       continue;
     }
 
@@ -203,23 +222,39 @@ export function generateTex(blocks, opts = {}) {
       while (i < blocks.length && blocks[i] instanceof ListItem) {
         items.push(blocks[i]); i++;
       }
-      merged.push({ type: 'list', items });
+      merged.push({ type: 'list', items, ordered: items[0].ordered });
     } else { merged.push(blocks[i]); i++; }
   }
 
   for (const block of merged) {
     if (block instanceof BlankLine) continue;
     if (block.type === 'list') {
-      parts.push('\\begin{itemize}\n');
+      const env = block.ordered ? 'enumerate' : 'itemize';
+      parts.push(`\\begin{${env}}\n`);
       for (const it of block.items) {
         parts.push('\\item ' + renderInlineTex(it.segments) + '\n');
       }
-      parts.push('\\end{itemize}\n\n');
+      parts.push(`\\end{${env}}\n\n`);
       continue;
     }
     if (block instanceof Heading) {
-      const cmd = block.level === 1 ? 'section' : 'subsection';
+      const cmds = {1:'section', 2:'subsection', 3:'subsubsection', 4:'paragraph'};
+      const cmd = cmds[block.level] || 'paragraph';
       parts.push(`\\${cmd}{${renderInlineTex(block.segments)}}\n`);
+      continue;
+    }
+    if (block instanceof HorizontalRule) {
+      parts.push('\\noindent\\rule{\\linewidth}{0.4pt}\n\n');
+      continue;
+    }
+    if (block instanceof Blockquote) {
+      parts.push('\\begin{quote}\n');
+      // 递归生成引用内容
+      const innerTex = generateTex(block.blocks, { defaultPlotWidth: opts.defaultPlotWidth });
+      // 提取 \begin{document} 和 \end{document} 之间的内容
+      const m = innerTex.match(/\\begin\{document\}([\s\S]*?)\\end\{document\}/);
+      if (m) parts.push(m[1].trim() + '\n');
+      parts.push('\\end{quote}\n\n');
       continue;
     }
     if (block instanceof Paragraph) {
@@ -250,6 +285,7 @@ function renderInlineTex(segments) {
     if (seg instanceof Text) return seg.text;
     if (seg instanceof InlineMath) return `$${seg.latex}$`;
     if (seg instanceof Bold) return `\\textbf{${renderInlineTex(seg.segments)}}`;
+    if (seg instanceof Italic) return `\\textit{${renderInlineTex(seg.segments)}}`;
     if (seg instanceof Code) {
       let s = seg.code;
       for (const [ch, rep] of [['\\','\\textbackslash{}'],['&','\\&'],['%','\\%'],['$','\\$'],['#','\\#'],['_','\\_'],['{','\\{'],['}','\\}'],['~','\\textasciitilde{}'],['^','\\textasciicircum{}']]) {

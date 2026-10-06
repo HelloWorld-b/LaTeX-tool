@@ -192,9 +192,15 @@ body {{
 }}
 .preview-content h1 {{ font-size: 24px; margin: 16px 0 12px; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 6px; }}
 .preview-content h2 {{ font-size: 19px; margin: 14px 0 10px; color: #34495e; }}
+.preview-content h3 {{ font-size: 16px; margin: 12px 0 8px; color: #34495e; }}
+.preview-content h4 {{ font-size: 14px; margin: 10px 0 6px; color: #555; font-weight: 600; }}
 .preview-content p {{ margin: 8px 0; }}
-.preview-content ul {{ margin: 8px 0 8px 24px; }}
+.preview-content ul, .preview-content ol {{ margin: 8px 0 8px 24px; }}
 .preview-content li {{ margin: 4px 0; }}
+.preview-content blockquote {{ margin: 12px 0; padding: 8px 16px; border-left: 4px solid #3498db; background: #f8f9fa; color: #555; }}
+.preview-content blockquote p {{ margin: 4px 0; }}
+.preview-content hr {{ border: none; border-top: 1px solid #ddd; margin: 16px 0; }}
+.preview-content em {{ font-style: italic; }}
 .preview-content table {{ border-collapse: collapse; margin: 12px 0; width: 100%; }}
 .preview-content th, .preview-content td {{ border: 1px solid #ddd; padding: 6px 12px; text-align: left; }}
 .preview-content th {{ background: #f0f0f0; font-weight: 600; }}
