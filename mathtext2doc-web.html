@@ -686,6 +686,11 @@ function parseShapeItem(shape, paramSegs, raw) {
     if (m = seg.match(/^x\s+in\s+\[(.*)\]\s*$/)) { xRange = parseRange(m[1], 'x'); continue; }
     if (m = seg.match(/^y\s+in\s+\[(.*)\]\s*$/)) { yRange = parseRange(m[1], 'y'); continue; }
     if (m = seg.match(/^label\s*=\s*"(.*)"\s*$/)) { label = m[1]; continue; }
+    // direction 是字符串参数（up/down/left/right），不走 parseShapeValue
+    if (m = seg.match(/^direction\s*=\s*(\w+)$/)) {
+      params['direction'] = m[1].toLowerCase();
+      continue;
+    }
     if (m = seg.match(/^(\w+)\s*=\s*(.+)$/)) {
       params[m[1].toLowerCase()] = parseShapeValue(m[2], m[1].toLowerCase(), raw);
       continue;
@@ -976,20 +981,42 @@ function renderPlot(plot, container, displayWidth = 0.7) {
       yLo = -3; yHi = 3;
     }
   }
-  const bbox = [xmax, yHi, xmin, yLo];
+  // 如果需要保持比例（几何图/隐函数图），手动调整 bbox 让 x/y 跨度比 = 容器宽高比
+  // JSXGraph 1.14 的 initBoard keepAspectRatio 选项不生效，必须手动算
+  // 容器宽高比固定为 5/4（CSS aspectRatio），即使 getBoundingClientRect 暂时返回 0 也能用
+  const containerAspect = 5 / 4;
+  let finalXmin = xmin, finalXmax = xmax, finalYmin = yLo, finalYmax = yHi;
+  if (hasImplicit || hasShape) {
+    const xSpan = xmax - xmin;
+    const ySpan = yHi - yLo;
+    const dataAspect = xSpan / Math.max(0.001, ySpan);
+    if (dataAspect > containerAspect) {
+      // x 跨度大，需要扩大 y 范围
+      const newYSpan = xSpan / containerAspect;
+      const yCenter = (yHi + yLo) / 2;
+      finalYmin = yCenter - newYSpan / 2;
+      finalYmax = yCenter + newYSpan / 2;
+    } else {
+      // y 跨度大，需要扩大 x 范围
+      const newXSpan = ySpan * containerAspect;
+      const xCenter = (xmax + xmin) / 2;
+      finalXmin = xCenter - newXSpan / 2;
+      finalXmax = xCenter + newXSpan / 2;
+    }
+  }
+  const bbox = [finalXmax, finalYmax, finalXmin, finalYmin];
   const board = JXG.JSXGraph.initBoard(container.id, {
     boundingbox: bbox,
     axis: false,
     showCopyright: false,
     showNavigation: false,
-    keepaspectratio: !!(hasImplicit || hasShape),
     pan: { enabled: false },
     zoom: { enabled: false },
     grid: { majorStep: 1, strokeColor: '#ddd', strokeWidth: 0.5 },
   });
 
   // 画坐标轴（教材风格）
-  drawAxes(board, xmin, xmax, yLo, yHi);
+  drawAxes(board, finalXmin, finalXmax, finalYmin, finalYmax);
 
   // 渲染每个 item
   for (let i = 0; i < plot.items.length; i++) {
@@ -1159,18 +1186,26 @@ function renderShape(board, item, color) {
     const p = params.p;
     const dir = (params.direction || 'up').toLowerCase();
     const span = Math.abs(p) * 4 + 1.5;
+    const parabolaOpts = { strokeColor: color, strokeWidth: 2, highlight: false, curveType: 'parameter' };
+    // 用参数曲线 curve 统一画，避免 functiongraph 的兼容问题
+    // up:    x=t,        y = (t-h)²/(4p) + k
+    // down:  x=t,        y = -(t-h)²/(4p) + k
+    // right: x = (t-k)²/(4p) + h,  y=t
+    // left:  x = -(t-k)²/(4p) + h, y=t
     if (dir === 'up' || dir === 'down') {
       const sign = dir === 'up' ? 1 : -1;
-      const fn = (x) => sign * (x - h) ** 2 / (4 * p) + k;
-      board.create('functiongraph', [fn, h - span, h + span], opts);
+      const xFn = (t) => t;
+      const yFn = (t) => sign * (t - h) ** 2 / (4 * p) + k;
+      board.create('curve', [xFn, yFn, h - span, h + span], parabolaOpts);
       anchor = [h, k + sign * Math.abs(p) + 0.2];
     } else {
       const sign = dir === 'right' ? 1 : -1;
-      const fn = (y) => sign * (y - k) ** 2 / (4 * p) + h;
-      // 用参数曲线画
-      board.create('curve', [(t) => fn(t), (t) => t, k - span, k + span], opts);
+      const xFn = (t) => sign * (t - k) ** 2 / (4 * p) + h;
+      const yFn = (t) => t;
+      board.create('curve', [xFn, yFn, k - span, k + span], parabolaOpts);
       anchor = [h + sign * Math.abs(p), k];
     }
+    board.create('point', [h, k], { name: '', size: 3, fillColor: color, strokeColor: color, fixed: true });
   }
 
   if (label && anchor) {
@@ -1217,6 +1252,12 @@ function escapeHtml(s) {
  */
 function renderDocument(blocks, container, opts = {}) {
   const defaultWidth = opts.defaultWidth ?? 0.7;
+  // 释放所有旧 JSXGraph board，避免内存泄漏和 bbox 残留
+  if (typeof JXG !== 'undefined' && JXG.boards) {
+    for (const id of Object.keys(JXG.boards)) {
+      try { JXG.JSXGraph.freeBoard(JXG.boards[id]); } catch (e) {}
+    }
+  }
   container.innerHTML = '';
   let plotIdx = 0;
   const plotContainers = [];
@@ -1727,7 +1768,9 @@ function setStatus(msg, isErr = false) {
   statusBar.className = 'status-bar ' + (isErr ? 'error-msg' : 'ok-msg');
 }
 
+let _rendering = false;  // 防重入锁
 function doRender() {
+  if (_rendering) return;  // 上一次渲染未完成，跳过
   const text = editor.value;
   if (!text.trim()) {
     preview.innerHTML = '<p style="color:#999;text-align:center;padding:48px">在左侧输入文本即可预览</p>';
@@ -1735,6 +1778,7 @@ function doRender() {
     setStatus('空文档');
     return;
   }
+  _rendering = true;
   try {
     currentBlocks = parseDocument(text);
     const defaultWidth = parseFloat(document.getElementById('plot-width').value) || 0.7;
@@ -1743,6 +1787,8 @@ function doRender() {
   } catch (ex) {
     setStatus(`✗ ${ex.message}`, true);
     console.error(ex);
+  } finally {
+    _rendering = false;
   }
 }
 
@@ -1804,10 +1850,17 @@ editorPane.addEventListener('drop', async (e) => {
     return;
   }
   try {
-    const text = await file.text();
+    let text = await file.text();
+    // 规范化：去 BOM、统一换行符、去零宽字符
+    text = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    text = text.replace(/[\u200B\u200C\u200D\uFEFF]/g, '');
     editor.value = text;
-    doRender();
-    setStatus(`✓ 已加载 ${file.name}（${(file.size/1024).toFixed(1)}KB）`);
+    setStatus(`✓ 正在渲染 ${file.name}...`);
+    // 用 setTimeout 让 UI 先更新状态栏，避免卡死时无反馈
+    setTimeout(() => {
+      try { doRender(); }
+      catch (e) { setStatus(`✗ 渲染失败：${e.message}`, true); }
+    }, 50);
   } catch (ex) {
     setStatus(`✗ 读取文件失败：${ex.message}`, true);
   }

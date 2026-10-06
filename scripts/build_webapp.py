@@ -342,7 +342,9 @@ function setStatus(msg, isErr = false) {{
   statusBar.className = 'status-bar ' + (isErr ? 'error-msg' : 'ok-msg');
 }}
 
+let _rendering = false;  // 防重入锁
 function doRender() {{
+  if (_rendering) return;  // 上一次渲染未完成，跳过
   const text = editor.value;
   if (!text.trim()) {{
     preview.innerHTML = '<p style="color:#999;text-align:center;padding:48px">在左侧输入文本即可预览</p>';
@@ -350,6 +352,7 @@ function doRender() {{
     setStatus('空文档');
     return;
   }}
+  _rendering = true;
   try {{
     currentBlocks = parseDocument(text);
     const defaultWidth = parseFloat(document.getElementById('plot-width').value) || 0.7;
@@ -358,6 +361,8 @@ function doRender() {{
   }} catch (ex) {{
     setStatus(`✗ ${{ex.message}}`, true);
     console.error(ex);
+  }} finally {{
+    _rendering = false;
   }}
 }}
 
@@ -419,10 +424,17 @@ editorPane.addEventListener('drop', async (e) => {{
     return;
   }}
   try {{
-    const text = await file.text();
+    let text = await file.text();
+    // 规范化：去 BOM、统一换行符、去零宽字符
+    text = text.replace(/^\\uFEFF/, '').replace(/\\r\\n/g, '\\n').replace(/\\r/g, '\\n');
+    text = text.replace(/[\\u200B\\u200C\\u200D\\uFEFF]/g, '');
     editor.value = text;
-    doRender();
-    setStatus(`✓ 已加载 ${{file.name}}（${{(file.size/1024).toFixed(1)}}KB）`);
+    setStatus(`✓ 正在渲染 ${{file.name}}...`);
+    // 用 setTimeout 让 UI 先更新状态栏，避免卡死时无反馈
+    setTimeout(() => {{
+      try {{ doRender(); }}
+      catch (e) {{ setStatus(`✗ 渲染失败：${{e.message}}`, true); }}
+    }}, 50);
   }} catch (ex) {{
     setStatus(`✗ 读取文件失败：${{ex.message}}`, true);
   }}

@@ -130,20 +130,42 @@ export function renderPlot(plot, container, displayWidth = 0.7) {
       yLo = -3; yHi = 3;
     }
   }
-  const bbox = [xmax, yHi, xmin, yLo];
+  // 如果需要保持比例（几何图/隐函数图），手动调整 bbox 让 x/y 跨度比 = 容器宽高比
+  // JSXGraph 1.14 的 initBoard keepAspectRatio 选项不生效，必须手动算
+  // 容器宽高比固定为 5/4（CSS aspectRatio），即使 getBoundingClientRect 暂时返回 0 也能用
+  const containerAspect = 5 / 4;
+  let finalXmin = xmin, finalXmax = xmax, finalYmin = yLo, finalYmax = yHi;
+  if (hasImplicit || hasShape) {
+    const xSpan = xmax - xmin;
+    const ySpan = yHi - yLo;
+    const dataAspect = xSpan / Math.max(0.001, ySpan);
+    if (dataAspect > containerAspect) {
+      // x 跨度大，需要扩大 y 范围
+      const newYSpan = xSpan / containerAspect;
+      const yCenter = (yHi + yLo) / 2;
+      finalYmin = yCenter - newYSpan / 2;
+      finalYmax = yCenter + newYSpan / 2;
+    } else {
+      // y 跨度大，需要扩大 x 范围
+      const newXSpan = ySpan * containerAspect;
+      const xCenter = (xmax + xmin) / 2;
+      finalXmin = xCenter - newXSpan / 2;
+      finalXmax = xCenter + newXSpan / 2;
+    }
+  }
+  const bbox = [finalXmax, finalYmax, finalXmin, finalYmin];
   const board = JXG.JSXGraph.initBoard(container.id, {
     boundingbox: bbox,
     axis: false,
     showCopyright: false,
     showNavigation: false,
-    keepaspectratio: !!(hasImplicit || hasShape),
     pan: { enabled: false },
     zoom: { enabled: false },
     grid: { majorStep: 1, strokeColor: '#ddd', strokeWidth: 0.5 },
   });
 
   // 画坐标轴（教材风格）
-  drawAxes(board, xmin, xmax, yLo, yHi);
+  drawAxes(board, finalXmin, finalXmax, finalYmin, finalYmax);
 
   // 渲染每个 item
   for (let i = 0; i < plot.items.length; i++) {
@@ -313,18 +335,26 @@ function renderShape(board, item, color) {
     const p = params.p;
     const dir = (params.direction || 'up').toLowerCase();
     const span = Math.abs(p) * 4 + 1.5;
+    const parabolaOpts = { strokeColor: color, strokeWidth: 2, highlight: false, curveType: 'parameter' };
+    // 用参数曲线 curve 统一画，避免 functiongraph 的兼容问题
+    // up:    x=t,        y = (t-h)²/(4p) + k
+    // down:  x=t,        y = -(t-h)²/(4p) + k
+    // right: x = (t-k)²/(4p) + h,  y=t
+    // left:  x = -(t-k)²/(4p) + h, y=t
     if (dir === 'up' || dir === 'down') {
       const sign = dir === 'up' ? 1 : -1;
-      const fn = (x) => sign * (x - h) ** 2 / (4 * p) + k;
-      board.create('functiongraph', [fn, h - span, h + span], opts);
+      const xFn = (t) => t;
+      const yFn = (t) => sign * (t - h) ** 2 / (4 * p) + k;
+      board.create('curve', [xFn, yFn, h - span, h + span], parabolaOpts);
       anchor = [h, k + sign * Math.abs(p) + 0.2];
     } else {
       const sign = dir === 'right' ? 1 : -1;
-      const fn = (y) => sign * (y - k) ** 2 / (4 * p) + h;
-      // 用参数曲线画
-      board.create('curve', [(t) => fn(t), (t) => t, k - span, k + span], opts);
+      const xFn = (t) => sign * (t - k) ** 2 / (4 * p) + h;
+      const yFn = (t) => t;
+      board.create('curve', [xFn, yFn, k - span, k + span], parabolaOpts);
       anchor = [h + sign * Math.abs(p), k];
     }
+    board.create('point', [h, k], { name: '', size: 3, fillColor: color, strokeColor: color, fixed: true });
   }
 
   if (label && anchor) {

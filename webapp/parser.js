@@ -222,6 +222,11 @@ function parseShapeItem(shape, paramSegs, raw) {
     if (m = seg.match(/^x\s+in\s+\[(.*)\]\s*$/)) { xRange = parseRange(m[1], 'x'); continue; }
     if (m = seg.match(/^y\s+in\s+\[(.*)\]\s*$/)) { yRange = parseRange(m[1], 'y'); continue; }
     if (m = seg.match(/^label\s*=\s*"(.*)"\s*$/)) { label = m[1]; continue; }
+    // direction 是字符串参数（up/down/left/right），不走 parseShapeValue
+    if (m = seg.match(/^direction\s*=\s*(\w+)$/)) {
+      params['direction'] = m[1].toLowerCase();
+      continue;
+    }
     if (m = seg.match(/^(\w+)\s*=\s*(.+)$/)) {
       params[m[1].toLowerCase()] = parseShapeValue(m[2], m[1].toLowerCase(), raw);
       continue;

@@ -40,6 +40,12 @@ function escapeHtml(s) {
  */
 export function renderDocument(blocks, container, opts = {}) {
   const defaultWidth = opts.defaultWidth ?? 0.7;
+  // 释放所有旧 JSXGraph board，避免内存泄漏和 bbox 残留
+  if (typeof JXG !== 'undefined' && JXG.boards) {
+    for (const id of Object.keys(JXG.boards)) {
+      try { JXG.JSXGraph.freeBoard(JXG.boards[id]); } catch (e) {}
+    }
+  }
   container.innerHTML = '';
   let plotIdx = 0;
   const plotContainers = [];
