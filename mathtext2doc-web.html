@@ -863,6 +863,27 @@ if (typeof JXG !== 'undefined' && JXG.Options && JXG.Options.text) {
   JXG.Options.text.fontUnit = 'px';
 }
 
+/**
+ * 创建标签 text（支持 LaTeX）
+ * 如果 label 含 $...$，用 KaTeX 渲染；否则纯文本
+ */
+function createLabel(board, x, y, label, color) {
+  if (!label) return;
+  const hasLatex = label.includes('$');
+  const opts = {
+    color: color, fontSize: 12, anchorX: 'middle', anchorY: 'bottom', fixed: true,
+  };
+  if (hasLatex && typeof katex !== 'undefined') {
+    // 用 KaTeX 渲染：JSXGraph 的 useKatex 会把 $...$ 里的内容用 KaTeX 渲染
+    opts.useKatex = true;
+    // JSXGraph useKatex 模式下，label 内容就是原始 LaTeX（不含 $）
+    // 但 JSXGraph 期望 label 用 $...$ 包裹来识别数学模式
+    board.create('text', [x, y, label], opts);
+  } else {
+    board.create('text', [x, y, label], opts);
+  }
+}
+
 // 把用户表达式转成 JS 可执行函数
 // sympy 不在浏览器端，所以我们用 new Function + Math 命名空间
 function compileExpr(expr) {
@@ -1083,10 +1104,7 @@ function renderExplicit(board, item, color) {
     const midX = (a + b) / 2;
     let midY = 0;
     try { midY = fn(midX); } catch (e) {}
-    board.create('text', [midX, midY + 0.2, item.label], {
-      color: color, fontSize: 12, anchorX: 'middle', anchorY: 'bottom',
-      fixed: true,
-    });
+    createLabel(board, midX, midY + 0.2, item.label, color);
   }
 }
 
@@ -1121,9 +1139,7 @@ function renderImplicit(board, item, color, xmin, xmax, ymin, ymax) {
   // 标签
   if (item.label && points.length) {
     const mid = points[Math.floor(points.length / 2)][0];
-    board.create('text', [mid[0], mid[1] + 0.2, item.label], {
-      color: color, fontSize: 12, anchorX: 'middle', anchorY: 'bottom', fixed: true,
-    });
+    createLabel(board, mid[0], mid[1] + 0.2, item.label, color);
   }
 }
 
@@ -1238,7 +1254,7 @@ function renderShape(board, item, color) {
   }
 
   if (label && anchor) {
-    board.create('text', [anchor[0], anchor[1], label], textOpts);
+    createLabel(board, anchor[0], anchor[1], label, color);
   }
 }
 

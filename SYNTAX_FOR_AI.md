@@ -374,18 +374,30 @@ x in [-1, 1]            ✅
 
 ### 4.7 `label` 的写法
 
+`label` 支持三种内容：纯文本、中文、**LaTeX 数学公式**（用 `$...$` 包裹）。
+
 ```
-label="sin(x)"          ✅
-label="单位圆"           ✅
-label="y = x^2"         ✅（注意：label 内不是 LaTeX，是 matplotlib 文本）
-label="抛物线 y=x²"     ✅（支持 Unicode 上标 ² ³ 等，matplotlib 会渲染）
+label="sin(x)"              ✅ 纯文本
+label="单位圆"               ✅ 中文
+label="$\sin(x)$"           ✅ LaTeX 数学公式（sin 用正体，x 用斜体）
+label="$\cos(x)$"           ✅ LaTeX 数学公式
+label="圆 $\Gamma$"         ✅ 中文 + LaTeX 混合（Γ 希腊字母）
+label="$y = x^2$"           ✅ LaTeX 公式
+label="抛物线 $C$"          ✅ 中文 + LaTeX 变量
 ```
 
+**LaTeX 支持范围**：
+- **CLI 端**：用 matplotlib 的 mathtext 渲染（支持 `\sin` `\cos` `\Gamma` `\frac` `^` `_` 等常用命令）
+- **HTML 端**：用 KaTeX 渲染（支持 mathtext 的大多数命令）
+- 两端都自动识别 `$...$`，无需额外配置
+
+**混合文本**：`label="圆 $\Gamma$"` 中，`圆 ` 是纯文本，`$\Gamma$` 是 LaTeX，会混合显示。
+
 **注意**：
-- `label` 内容**不是 LaTeX**，是 matplotlib 的 mathtext。如果你写 `label="$\sin(x)$"`，会显示字面 `$\sin(x)$`。直接写 `label="sin(x)"` 即可。
 - `label` 内的 `;` 不会被当作分隔符（在字符串内）
 - `label` 内的 `,` 也不会被当作参数分隔符
 - 省略 `label` 则该曲线不显示文字标签
+- HTML 端导出 PNG 时，含 LaTeX 的标签会降级为纯文本（避免 canvas 安全限制）
 
 ### 4.8 `@plot` 在文档中的位置
 
@@ -427,7 +439,7 @@ label="抛物线 y=x²"     ✅（支持 Unicode 上标 ² ³ 等，matplotlib �
 - 点列表用 `[(x1,y1), (x2,y2), ...]` 表示
 - 标量参数（半径、宽高）是数字或 `pi`/`e` 表达式
 - 几何图形的 `x in` / `y in` 都是**可选的**——不指定时从图形数据自动估算
-- `label` 可选，支持中文
+- `label` 可选，支持中文，**支持 LaTeX 数学公式**（用 `$...$` 包裹）
 - 标签锚点：点→点位置；线段/向量→中点；圆/椭圆→顶部；多边形→几何中心；矩形→中心
 - 含几何图形的图默认 `x/y 单位长度相等`（圆是正圆）
 
@@ -673,7 +685,7 @@ $$R(\theta) = \begin{pmatrix} \cos\theta & -\sin\theta \\ \sin\theta & \cos\thet
 ### 6.4 中文检查
 
 - [ ] 文件是 UTF-8 编码
-- [ ] `label` 支持中文
+- [ ] `label` 支持中文和 LaTeX（`$...$`）
 - [ ] 公式内的中文用 `\text{中文}` 包裹（如 `$\text{当 } x > 0$`）
 
 ---
