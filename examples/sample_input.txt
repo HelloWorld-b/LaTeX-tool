@@ -50,3 +50,34 @@ $$e^{i\pi} + 1 = 0$$
 | $\sin(x)$ | $\mathbb{R}$ | $[-1, 1]$ | $2\pi$ |
 | $\cos(x)$ | $\mathbb{R}$ | $[-1, 1]$ | $2\pi$ |
 | $\tan(x)$ | $x \neq \pi/2 + k\pi$ | $\mathbb{R}$ | $\pi$ |
+
+## 六、几何图形
+
+除了函数曲线，工具也支持常用几何图形。下面用 `shape=circle` 画一个圆，
+并标注圆心和一个端点：
+
+@plot{
+  shape=circle, center=(0, 0), r=2, label="圆 C";
+  shape=point, at=(2, 0), label="P";
+  shape=segment, from=(0, 0), to=(2, 0), label="半径 r"
+}
+
+椭圆 $\frac{x^2}{a^2} + \frac{y^2}{b^2} = 1$（这里 $a=3$, $b=1$）：
+
+@plot{
+  shape=ellipse, center=(0, 0), a=3, b=1, label="椭圆"
+}
+
+三角形与向量示例：
+
+@plot{
+  shape=polygon, points=[(0,0), (2,0), (1, 1.5)], label="△ABC";
+  shape=vector, from=(0, 0), to=(1, 1.5), label="高 h"
+}
+
+矩形和直线：
+
+@plot{
+  shape=rectangle, origin=(0, 0), w=3, h=2, label="矩形";
+  shape=line, from=(0, 0), to=(1, 1), label="y=x"
+}

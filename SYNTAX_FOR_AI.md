@@ -203,15 +203,17 @@ $$
 - `@plot{` 开始，`}` 结束，花括号内可跨多行
 - 每个绘制项用 `;` 分隔（最后一项的 `;` 可省略）
 - 每个绘制项内部用 `,` 分隔参数
-- **`;` 和 `,` 在 `[...]` 区间内或 `"..."` 字符串内不会被当作分隔符**
+- **`;` 和 `,` 在 `[...]` 区间内、`(...)` 内或 `"..."` 字符串内不会被当作分隔符**
 
 ### 4.2 单个绘制项的语法
+
+绘制项有两种类型：
+
+**类型 A：函数曲线**
 
 ```
 表达式, x in [a, b], y in [c, d], label="标签文本"
 ```
-
-参数说明：
 
 | 参数 | 必填 | 说明 |
 |---|---|---|
@@ -219,6 +221,14 @@ $$
 | `x in [a, b]` | ✅ | x 定义域，必填 |
 | `y in [c, d]` | ⚠️ | 隐函数必填；显函数可省略（自动从数据估算） |
 | `label="..."` | ❌ | 曲线标签，支持中文；省略则无标签 |
+
+**类型 B：几何图形**
+
+```
+shape=图形名, 参数1=值1, 参数2=值2, ..., label="标签"
+```
+
+几何图形的 `x in` / `y in` 都是**可选的**（不指定时从图形数据自动估算）。详见第 4.10 节。
 
 ### 4.3 显函数 `y = f(x)`
 
@@ -337,6 +347,111 @@ label="抛物线 y=x²"     ✅（支持 Unicode 上标 ² ³ 等，matplotlib �
 
 可以看到两个函数相差 π/2 的相位。
 ```
+
+### 4.10 几何图形（新增）
+
+用 `shape=...` 触发几何图形绘制。每种图形有不同的必需参数：
+
+| `shape=` | 必需参数 | 说明 |
+|---|---|---|
+| `point` | `at=(x, y)` | 一个点 |
+| `segment` | `from=(x1,y1), to=(x2,y2)` | 线段（带端点） |
+| `line` | `from=(x1,y1), to=(x2,y2)` | 直线（延伸到坐标轴边界） |
+| `circle` | `center=(cx,cy), r=半径` | 圆 |
+| `ellipse` | `center=(cx,cy), a=半轴1, b=半轴2` | 椭圆（轴对齐） |
+| `polygon` | `points=[(x1,y1), (x2,y2), ...]` | 多边形（≥3 点） |
+| `rectangle` | `origin=(x0,y0), w=宽, h=高` | 矩形 |
+| `vector` | `from=(x1,y1), to=(x2,y2)` | 向量（带箭头） |
+| `parabola` | `vertex=(h,k), p=焦距, direction=up/down/left/right` | 抛物线（标准方程） |
+
+**parabola 说明**：标准方程 $(x-h)^2 = 4p(y-k)$（up）等 4 种开口方向。`direction` 默认 `up`。
+
+**通用规则**：
+- 坐标点用 `(x, y)` 表示，逗号分隔
+- 点列表用 `[(x1,y1), (x2,y2), ...]` 表示
+- 标量参数（半径、宽高）是数字或 `pi`/`e` 表达式
+- 几何图形的 `x in` / `y in` 都是**可选的**——不指定时从图形数据自动估算
+- `label` 可选，支持中文
+- 标签锚点：点→点位置；线段/向量→中点；圆/椭圆→顶部；多边形→几何中心；矩形→中心
+- 含几何图形的图默认 `x/y 单位长度相等`（圆是正圆）
+
+### 4.11 几何图形示例
+
+**点**：
+
+```
+@plot{
+  shape=point, at=(1, 2), label="A"
+}
+```
+
+**圆 + 点 + 半径**：
+
+```
+@plot{
+  shape=circle, center=(0, 0), r=2, label="圆 C";
+  shape=point, at=(2, 0), label="P";
+  shape=segment, from=(0, 0), to=(2, 0), label="半径 r"
+}
+```
+
+**椭圆**：
+
+```
+@plot{
+  shape=ellipse, center=(0, 0), a=3, b=1, label="椭圆"
+}
+```
+
+**三角形 + 高向量**：
+
+```
+@plot{
+  shape=polygon, points=[(0,0), (2,0), (1, 1.5)], label="△ABC";
+  shape=vector, from=(0, 0), to=(1, 1.5), label="高 h"
+}
+```
+
+**矩形 + 对角线**：
+
+```
+@plot{
+  shape=rectangle, origin=(0, 0), w=3, h=2, label="矩形";
+  shape=line, from=(0, 0), to=(1, 1), label="y=x"
+}
+```
+
+**自动范围（不指定 x in / y in）**：
+
+```
+@plot{
+  shape=circle, center=(0, 0), r=1, label="单位圆";
+  shape=point, at=(1, 0), label="A"
+}
+```
+
+**几何图形与函数曲线混合**：
+
+```
+@plot{
+  shape=circle, center=(0, 0), r=2, label="圆";
+  shape=point, at=(2, 0), label="P";
+  shape=vector, from=(0, 0), to=(2, 0), label="OP";
+  y = sin(x), x in [-3, 3], label="sin(x)"
+}
+```
+
+### 4.12 增强坐标系
+
+工具默认绘制**教材风格的坐标系**：
+
+- x 轴、y 轴用带箭头的线表示
+- 原点标注 `O`
+- 轴端点标注 `x`、`y`
+- 浅色网格 + 刻度
+- 隐藏 matplotlib 默认的边框 spines
+
+当图中有隐函数或几何图形时，`x/y 单位长度相等`（`set_aspect('equal')`），保证圆是正圆、椭圆比例正确。纯显函数图在 y 跨度不超过 x 跨度 3 倍时也启用 equal。
 
 ---
 
@@ -602,6 +717,7 @@ foo.pdf              # 编译产物 PDF（保留中间文件时）
 行内代码:  `code`
 行内公式:  $...$
 块级公式:  $$...$$
+
 显函数:   y = f(x), x in [a, b], label="..."
 隐函数:   F(x,y) = 0, x in [a, b], y in [c, d], label="..."
 多函数:   项1; 项2; 项3
@@ -610,6 +726,19 @@ foo.pdf              # 编译产物 PDF（保留中间文件时）
 幂:       ^ (不是 **)
 乘:       * (不能省略)
 区间:     [数字或pi/e表达式, 数字或pi/e表达式]
+
+几何图形:
+  shape=point, at=(x,y)
+  shape=segment, from=(x1,y1), to=(x2,y2)
+  shape=line, from=(x1,y1), to=(x2,y2)
+  shape=circle, center=(cx,cy), r=半径
+  shape=ellipse, center=(cx,cy), a=半轴1, b=半轴2
+  shape=polygon, points=[(x1,y1), (x2,y2), ...]
+  shape=rectangle, origin=(x0,y0), w=宽, h=高
+  shape=vector, from=(x1,y1), to=(x2,y2)
+  shape=parabola, vertex=(h,k), p=焦距, direction=up/down/left/right
+  # x in / y in 可选（自动估算）
+  # label 可选
 ```
 
 ---

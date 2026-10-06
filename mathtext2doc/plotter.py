@@ -306,6 +306,174 @@ def _plot_implicit(ax, item: PlotItem, color: str) -> _PlottedCurve:
 
 
 # ---------------------------------------------------------------------------
+# 几何图形渲染
+# ---------------------------------------------------------------------------
+
+def _plot_shape(ax, item: PlotItem, color: str) -> _PlottedCurve:
+    """渲染几何图形。"""
+    shape = item.shape
+    params = item.params
+    label = item.label
+    anchor = None
+    xs_plot = np.array([])
+    ys_plot = np.array([])
+
+    if shape == "point":
+        x, y = params["at"]
+        ax.plot([x], [y], marker="o", color=color, markersize=6,
+                markeredgecolor=color, markerfacecolor=color)
+        anchor = (float(x), float(y))
+        xs_plot = np.array([float(x)])
+        ys_plot = np.array([float(y)])
+
+    elif shape == "segment":
+        x1, y1 = params["from"]
+        x2, y2 = params["to"]
+        ax.plot([x1, x2], [y1, y2], color=color, linewidth=1.8,
+                solid_capstyle="round")
+        # 端点小圆点
+        ax.plot([x1, x2], [y1, y2], marker="o", color=color, markersize=4,
+                linestyle="None")
+        anchor = (float((x1 + x2) / 2), float((y1 + y2) / 2))
+        xs_plot = np.array([float(x1), float(x2)])
+        ys_plot = np.array([float(y1), float(y2)])
+
+    elif shape == "line":
+        # 直线：过两点，但要延伸到 axes 边界
+        x1, y1 = params["from"]
+        x2, y2 = params["to"]
+        # 计算方向向量，延伸到当前 xlim 的两端
+        dx, dy = x2 - x1, y2 - y1
+        if dx == 0 and dy == 0:
+            raise PlotRenderError(f"直线 from 和 to 不能重合：{item.params}")
+        # 用参数 t 延伸：t=0 在 from，t=1 在 to，延伸到 t=-100..100 兜底
+        # 实际延伸长度由 set_xlim 后的 clip 决定
+        ts = np.array([-1000, 1000])
+        xs = x1 + ts * dx
+        ys = y1 + ts * dy
+        ax.plot(xs, ys, color=color, linewidth=1.4)
+        anchor = (float((x1 + x2) / 2), float((y1 + y2) / 2))
+        xs_plot = np.array([float(x1), float(x2)])
+        ys_plot = np.array([float(y1), float(y2)])
+
+    elif shape == "circle":
+        cx, cy = params["center"]
+        r = float(params["r"])
+        if r <= 0:
+            raise PlotRenderError(f"圆半径必须为正：r={r}")
+        theta = np.linspace(0, 2 * np.pi, 200)
+        xs = cx + r * np.cos(theta)
+        ys = cy + r * np.sin(theta)
+        ax.plot(xs, ys, color=color, linewidth=1.6)
+        # 圆心小点
+        ax.plot([cx], [cy], marker="o", color=color, markersize=3)
+        anchor = (float(cx), float(cy + r))  # 顶部
+        xs_plot = xs
+        ys_plot = ys
+
+    elif shape == "ellipse":
+        cx, cy = params["center"]
+        a = float(params["a"])
+        b = float(params["b"])
+        if a <= 0 or b <= 0:
+            raise PlotRenderError(f"椭圆半轴必须为正：a={a}, b={b}")
+        theta = np.linspace(0, 2 * np.pi, 200)
+        xs = cx + a * np.cos(theta)
+        ys = cy + b * np.sin(theta)
+        ax.plot(xs, ys, color=color, linewidth=1.6)
+        ax.plot([cx], [cy], marker="o", color=color, markersize=3)
+        anchor = (float(cx), float(cy + b))
+        xs_plot = xs
+        ys_plot = ys
+
+    elif shape == "polygon":
+        pts = params["points"]
+        if len(pts) < 3:
+            raise PlotRenderError(f"多边形至少需要 3 个顶点，得到 {len(pts)}")
+        xs = [p[0] for p in pts] + [pts[0][0]]
+        ys = [p[1] for p in pts] + [pts[0][1]]
+        ax.plot(xs, ys, color=color, linewidth=1.6)
+        ax.plot([p[0] for p in pts], [p[1] for p in pts],
+                marker="o", color=color, markersize=4, linestyle="None")
+        # 几何中心
+        cx = sum(p[0] for p in pts) / len(pts)
+        cy = sum(p[1] for p in pts) / len(pts)
+        anchor = (float(cx), float(cy))
+        xs_plot = np.array([float(x) for x in xs])
+        ys_plot = np.array([float(y) for y in ys])
+
+    elif shape == "rectangle":
+        x0, y0 = params["origin"]
+        w = float(params["w"])
+        h = float(params["h"])
+        if w <= 0 or h <= 0:
+            raise PlotRenderError(f"矩形宽高必须为正：w={w}, h={h}")
+        xs = [x0, x0 + w, x0 + w, x0, x0]
+        ys = [y0, y0, y0 + h, y0 + h, y0]
+        ax.plot(xs, ys, color=color, linewidth=1.6)
+        anchor = (float(x0 + w / 2), float(y0 + h / 2))
+        xs_plot = np.array([float(x) for x in xs])
+        ys_plot = np.array([float(y) for y in ys])
+
+    elif shape == "vector":
+        x1, y1 = params["from"]
+        x2, y2 = params["to"]
+        # 用 ax.annotate 画带箭头的向量
+        ax.annotate(
+            "",
+            xy=(x2, y2), xytext=(x1, y1),
+            arrowprops=dict(arrowstyle="->", color=color, lw=1.8),
+        )
+        anchor = (float((x1 + x2) / 2), float((y1 + y2) / 2))
+        xs_plot = np.array([float(x1), float(x2)])
+        ys_plot = np.array([float(y1), float(y2)])
+
+    elif shape == "parabola":
+        # 标准方程（vertex=(h,k), p=焦距, direction=up/down/left/right）：
+        #   up:    (x-h)^2 = 4p(y-k)   → y = (x-h)^2/(4p) + k
+        #   down:  (x-h)^2 = -4p(y-k)  → y = -(x-h)^2/(4p) + k
+        #   right: (y-k)^2 = 4p(x-h)   → x = (y-k)^2/(4p) + h
+        #   left:  (y-k)^2 = -4p(x-h)  → x = -(y-k)^2/(4p) + h
+        h, k = params["vertex"]
+        p = float(params["p"])
+        direction = str(params.get("direction", "up")).lower().strip()
+        if p == 0:
+            raise PlotRenderError("parabola 的 p 不能为 0")
+        # 在 vertex 周围画 4 倍 p 的范围（够看清形状又不会太远）
+        span = abs(p) * 4 + 1.5
+        if direction in ("up", "down"):
+            sign = 1 if direction == "up" else -1
+            xs = np.linspace(float(h) - span, float(h) + span, 400)
+            ys = sign * (xs - float(h)) ** 2 / (4 * p) + float(k)
+            ax.plot(xs, ys, color=color, linewidth=1.6)
+            # 顶点
+            ax.plot([h], [k], marker="o", color=color, markersize=4)
+            anchor = (float(h), float(k) + sign * abs(p))
+            xs_plot = xs
+            ys_plot = ys
+        elif direction in ("left", "right"):
+            sign = 1 if direction == "right" else -1
+            ys = np.linspace(float(k) - span, float(k) + span, 400)
+            xs = sign * (ys - float(k)) ** 2 / (4 * p) + float(h)
+            ax.plot(xs, ys, color=color, linewidth=1.6)
+            ax.plot([h], [k], marker="o", color=color, markersize=4)
+            anchor = (float(h) + sign * abs(p), float(k))
+            xs_plot = xs
+            ys_plot = ys
+        else:
+            raise PlotRenderError(
+                f"parabola 的 direction 必须是 up/down/left/right，得到 {direction!r}"
+            )
+
+    else:
+        raise PlotRenderError(f"未知几何图形：{shape!r}")
+
+    return _PlottedCurve(
+        label=label, color=color, xs=xs_plot, ys=ys_plot, anchor=anchor
+    )
+
+
+# ---------------------------------------------------------------------------
 # 标签避让
 # ---------------------------------------------------------------------------
 
@@ -421,27 +589,37 @@ def render_plot(plot: Plot, out_path: str, dpi: int = 150) -> str:
     if not plot.items:
         raise PlotRenderError("@plot 指令没有任何绘制项")
 
-    # 决定坐标范围：取所有 item 的 x/y 范围并集
-    xmin = math.inf
-    xmax = -math.inf
-    ymin = math.inf
-    ymax = -math.inf
+    # ---------- 决定坐标范围 ----------
+    # 函数曲线项必须有 x_range（parser 已校验），几何图形项的 x_range 可选
+    # 收集：用户显式指定的范围 + 几何图形的图形边界
+    user_xmin = math.inf
+    user_xmax = -math.inf
+    user_ymin = math.inf
+    user_ymax = -math.inf
+    has_user_x = False
+    has_user_y = False
+    has_implicit = False
+    has_shape = False
+
     for it in plot.items:
-        a, b = it.x_range
-        xmin = min(xmin, float(a))
-        xmax = max(xmax, float(b))
+        if it.kind == "implicit":
+            has_implicit = True
+        if it.kind == "shape":
+            has_shape = True
+        if it.x_range is not None:
+            a, b = it.x_range
+            user_xmin = min(user_xmin, float(a))
+            user_xmax = max(user_xmax, float(b))
+            has_user_x = True
         if it.y_range is not None:
             c, d = it.y_range
-            ymin = min(ymin, float(c))
-            ymax = max(ymax, float(d))
-    if not math.isfinite(xmin) or not math.isfinite(xmax):
-        raise PlotRenderError("无法确定 plot 的 x 范围")
-    if not math.isfinite(ymin) or not math.isfinite(ymax):
-        # 显函数图：自动从数据估算，先用 5% margin
-        ymin, ymax = None, None
+            user_ymin = min(user_ymin, float(c))
+            user_ymax = max(user_ymax, float(d))
+            has_user_y = True
 
     fig, ax = plt.subplots(figsize=(5, 4), constrained_layout=True)
 
+    # ---------- 渲染所有项 ----------
     curves: List[_PlottedCurve] = []
     for i, item in enumerate(plot.items):
         color = _COLOR_CYCLE[i % len(_COLOR_CYCLE)]
@@ -449,49 +627,119 @@ def render_plot(plot: Plot, out_path: str, dpi: int = 150) -> str:
             cur = _plot_explicit(ax, item, color)
         elif item.kind == "implicit":
             cur = _plot_implicit(ax, item, color)
+        elif item.kind == "shape":
+            cur = _plot_shape(ax, item, color)
         else:
             raise PlotRenderError(f"未知绘图类型：{item.kind!r}")
         curves.append(cur)
 
-    # 坐标范围
-    if ymin is None or ymax is None:
-        # 纯显函数图：y 范围由 autoscale 决定
+    # ---------- 设置坐标范围 ----------
+    if has_user_x and has_user_y:
+        # 用户显式指定了 x、y 范围
+        xmin, xmax = user_xmin, user_xmax
+        ymin, ymax = user_ymin, user_ymax
+    elif has_user_x and not has_user_y:
+        # 用户只指定了 x 范围，y 由 autoscale 决定
+        xmin, xmax = user_xmin, user_xmax
         ax.relim()
         ax.autoscale_view()
+        ymin, ymax = ax.get_ylim()
         ax.set_xlim(xmin, xmax)
-        # 取 autoscale 后的实际 y 范围，用于判断是否启用 equal
-        y_lo, y_hi = ax.get_ylim()
-        x_span = xmax - xmin
-        y_span = y_hi - y_lo
-        # 默认 x/y 单位长度一致；但当 y 跨度远大于 x（如 tan、exp 等陡峭函数）
-        # 1:1 会让 x 轴被压扁到无法辨认，此时退回 'auto' 保证可读性。
-        # 阈值：y 跨度超过 x 跨度 3 倍，认为不适合 equal。
-        if x_span > 0 and y_span / x_span <= 3.0:
-            ax.set_aspect("equal", adjustable="box")
-        # 否则保持 auto（matplotlib 默认）
+    elif has_shape and not has_user_x:
+        # 纯几何图形，无任何范围指定：从图形数据自动估算
+        ax.relim()
+        ax.autoscale_view()
+        xmin, xmax = ax.get_xlim()
+        ymin, ymax = ax.get_ylim()
     else:
-        # 有隐函数图（或显隐混合）：用户显式指定了 x、y 范围，
-        # 默认 x/y 单位长度一致（几何意义正确，单位圆才是圆）。
-        ax.set_xlim(xmin, xmax)
-        ax.set_ylim(ymin, ymax)
-        ax.set_aspect("equal", adjustable="box")
+        # 兜底（不应该到这）
+        ax.relim()
+        ax.autoscale_view()
+        xmin, xmax = ax.get_xlim()
+        ymin, ymax = ax.get_ylim()
 
-    ax.axhline(0, color="#888", linewidth=0.5)
-    ax.axvline(0, color="#888", linewidth=0.5)
-    ax.grid(True, linewidth=0.4, alpha=0.5)
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
+    # 给范围留 8% 边距（避免图形贴边）
+    x_span = xmax - xmin
+    y_span = ymax - ymin
+    if x_span > 0:
+        pad = x_span * 0.08
+        xmin -= pad
+        xmax += pad
+    if y_span > 0:
+        pad = y_span * 0.08
+        ymin -= pad
+        ymax += pad
+
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
+
+    # ---------- 决定 aspect ----------
+    # 隐函数图、几何图形、显隐混合 → equal（几何意义正确）
+    # 纯显函数图 → equal 除非 y 跨度 > 3 倍 x 跨度（避免 tan 等压扁）
+    if has_implicit or has_shape:
+        ax.set_aspect("equal", adjustable="box")
+    else:
+        x_span_final = xmax - xmin
+        y_span_final = ymax - ymin
+        if x_span_final > 0 and y_span_final / x_span_final <= 3.0:
+            ax.set_aspect("equal", adjustable="box")
+
+    # ---------- 增强坐标系绘制 ----------
+    _draw_axes(ax, xmin, xmax, ymin, ymax)
 
     # 标签避让（必须先 draw 一次才能拿到 renderer）
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     _resolve_label_anchor(ax, curves, renderer)
 
-    # 把所有标签一次性写入（前面 _resolve_label_anchor 已经写入了 text_obj，
-    # 这里其实已经画完了；保留这一行作为兜底重新画一遍以防遗漏）
-    # 我们改为：先清掉刚才的 trial 文本，再用最终锚点画。
-    # 简化起见，直接保留 trial 写入的文本（位置已经更新为最终锚点）。
-
     fig.savefig(out_path, dpi=dpi)
     plt.close(fig)
     return out_path
+
+
+def _draw_axes(ax, xmin, xmax, ymin, ymax) -> None:
+    """绘制增强坐标系：箭头轴线、原点 O、x/y 轴标签。
+
+    与 matplotlib 默认 spines 不同，这里用 axhline/axvline + annotate 画带箭头的轴，
+    更接近中学/大学数学教材的坐标系画法。
+    """
+    # 隐藏默认 spines
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    # 网格
+    ax.grid(True, linewidth=0.4, alpha=0.4, color="#ccc")
+
+    # 坐标轴：用浅色线穿过原点（如果原点在视野内）
+    ax.axhline(0, color="#444", linewidth=1.0, zorder=1)
+    ax.axvline(0, color="#444", linewidth=1.0, zorder=1)
+
+    # x 轴箭头（右端）
+    ax.annotate(
+        "",
+        xy=(xmax, 0), xytext=(xmax - (xmax - xmin) * 0.04, 0),
+        arrowprops=dict(arrowstyle="->", color="#444", lw=1.2),
+        annotation_clip=False,
+    )
+    # y 轴箭头（上端）
+    ax.annotate(
+        "",
+        xy=(0, ymax), xytext=(0, ymax - (ymax - ymin) * 0.04),
+        arrowprops=dict(arrowstyle="->", color="#444", lw=1.2),
+        annotation_clip=False,
+    )
+
+    # 轴标签：x 在右端下方，y 在上端左侧
+    ax.text(xmax, 0, " x", ha="left", va="bottom", fontsize=11,
+            color="#222", clip_on=False)
+    ax.text(0, ymax, "y ", ha="right", va="top", fontsize=11,
+            color="#222", clip_on=False)
+
+    # 原点 O（仅当原点在视野内且不在边缘时显示）
+    if xmin < 0 < xmax and ymin < 0 < ymax:
+        ax.text(0, 0, " O", ha="left", va="top", fontsize=9,
+                color="#222", clip_on=False)
+
+    # 刻度
+    ax.tick_params(axis="both", which="both", direction="out",
+                   top=False, right=False, labelsize=8, colors="#444")

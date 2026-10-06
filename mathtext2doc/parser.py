@@ -86,11 +86,21 @@ class DisplayMath:
 
 @dataclass
 class PlotItem:
-    kind: str                       # "explicit" | "implicit"
-    expr: str                       # 原始表达式字符串
-    x_range: Tuple[object, object]  # (xmin, xmax)
+    """@plot 的一个绘制项。
+
+    几何图形：kind="shape", shape="point|segment|line|circle|ellipse|polygon|rectangle|vector"
+    函数曲线：kind="explicit|implicit"，expr 为表达式字符串
+    """
+    kind: str                       # "explicit" | "implicit" | "shape"
+    expr: Optional[str] = None      # 函数曲线的原始表达式
+    x_range: Optional[Tuple[object, object]] = None
     y_range: Optional[Tuple[object, object]] = None
     label: Optional[str] = None
+    # 几何图形专用字段
+    shape: Optional[str] = None     # point/segment/line/circle/ellipse/polygon/rectangle/vector
+    # 通用 dict 存几何参数：at/from/to/center/r/a/b/points/origin/w/h 等
+    # 值可能是 tuple（坐标）或 float（标量）或 list[tuple]（点列表）
+    params: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -170,15 +180,32 @@ def _parse_plot_items(body: str) -> List[PlotItem]:
 
 
 def _parse_one_plot_item(s: str) -> PlotItem:
-    """解析单个绘制项，例如：
+    """解析单个绘制项。
+
+    支持两种语法：
+
+    1. 函数曲线（向后兼容）：
         y = sin(x), x in [-pi, pi], label="sin(x)"
         x^2 + y^2 = 1, x in [-2, 2], y in [-2, 2], label="单位圆"
+
+    2. 几何图形（新增）：
+        shape=point, at=(1, 2), label="A"
+        shape=segment, from=(0, 0), to=(3, 4), label="AB"
+        shape=circle, center=(0, 0), r=1, label="C"
+        shape=ellipse, center=(0, 0), a=2, b=1, label="E"
+        shape=polygon, points=[(0,0), (1,0), (0.5, 1)], label="△"
+        shape=rectangle, origin=(0, 0), w=2, h=1, label="R"
+        shape=vector, from=(0, 0), to=(2, 1), label="v"
+        shape=line, from=(0, 0), to=(3, 4), label="L"
+
+    几何图形的 x in / y in 是可选的（不指定时从图形自动估算）。
     """
-    # 拆分时跳过 [...]  和 "..." 内的逗号。
+    # 拆分时跳过 [...]、(...) 和 "..." 内的逗号。
     segs = []
     buf = []
     in_str = False
-    bracket = 0
+    bracket = 0         # [] 计数
+    paren = 0           # () 计数
     for ch in s:
         if ch == '"':
             in_str = not in_str
@@ -189,7 +216,13 @@ def _parse_one_plot_item(s: str) -> PlotItem:
         elif ch == "]" and not in_str:
             bracket = max(0, bracket - 1)
             buf.append(ch)
-        elif ch == "," and not in_str and bracket == 0:
+        elif ch == "(" and not in_str:
+            paren += 1
+            buf.append(ch)
+        elif ch == ")" and not in_str:
+            paren = max(0, paren - 1)
+            buf.append(ch)
+        elif ch == "," and not in_str and bracket == 0 and paren == 0:
             segs.append("".join(buf).strip())
             buf = []
         else:
@@ -200,7 +233,15 @@ def _parse_one_plot_item(s: str) -> PlotItem:
     if not segs:
         raise PlotParseError(f"空的绘图项：{s!r}")
 
-    expr = segs[0]
+    first = segs[0]
+
+    # ---------- 分支 1：几何图形 ----------
+    m_shape = re.match(r"shape\s*=\s*(\w+)\s*$", first)
+    if m_shape:
+        return _parse_shape_item(m_shape.group(1), segs[1:], s)
+
+    # ---------- 分支 2：函数曲线 ----------
+    expr = first
     x_range = None
     y_range = None
     label = None
@@ -225,11 +266,9 @@ def _parse_one_plot_item(s: str) -> PlotItem:
     if x_range is None:
         raise PlotParseError(f"绘图项缺少 x in [...] 定义域：{s!r}")
 
-    # 判定显函数 / 隐函数：包含 "y ="（且只有一个 =）就是显函数
+    # 判定显函数 / 隐函数
     if re.match(r"^\s*y\s*=", expr):
         kind = "explicit"
-        # 把 y = sin(x) 中的 y = 去掉，得到 f(x) 表达式
-        # 我们保留完整 expr，绘图时再处理
     elif "=" in expr:
         kind = "implicit"
         if y_range is None:
@@ -248,6 +287,139 @@ def _parse_one_plot_item(s: str) -> PlotItem:
         y_range=y_range,
         label=label,
     )
+
+
+# 已知几何图形及其必需参数
+_SHAPE_SPECS = {
+    "point":     {"required": ["at"]},
+    "segment":   {"required": ["from", "to"]},
+    "line":      {"required": ["from", "to"]},
+    "circle":    {"required": ["center", "r"]},
+    "ellipse":   {"required": ["center", "a", "b"]},
+    "polygon":   {"required": ["points"]},
+    "rectangle": {"required": ["origin", "w", "h"]},
+    "vector":    {"required": ["from", "to"]},
+    "parabola":  {"required": ["vertex", "p"], "optional": ["direction"]},
+}
+
+
+def _parse_shape_item(shape: str, param_segs: list, raw: str) -> PlotItem:
+    """解析几何图形项。"""
+    shape = shape.lower().strip()
+    if shape not in _SHAPE_SPECS:
+        raise PlotParseError(
+            f"未知几何图形 shape={shape!r}（在项 {raw!r} 中）。"
+            f"支持：{', '.join(_SHAPE_SPECS.keys())}"
+        )
+
+    params: dict = {}
+    label = None
+    x_range = None
+    y_range = None
+
+    for seg in param_segs:
+        if not seg:
+            continue
+        # x in [...] / y in [...]
+        m = re.match(r"x\s+in\s+\[(.*)\]\s*$", seg)
+        if m:
+            x_range = _parse_range(m.group(1), axis="x")
+            continue
+        m = re.match(r"y\s+in\s+\[(.*)\]\s*$", seg)
+        if m:
+            y_range = _parse_range(m.group(1), axis="y")
+            continue
+        # label="..."
+        m = re.match(r'label\s*=\s*"(.*)"\s*$', seg)
+        if m:
+            label = m.group(1)
+            continue
+        # key=value 形式的参数
+        m = re.match(r"(\w+)\s*=\s*(.+)$", seg)
+        if m:
+            key = m.group(1).lower()
+            val_str = m.group(2).strip()
+            params[key] = _parse_shape_value(val_str, key, raw)
+            continue
+        raise PlotParseError(f"无法识别的几何参数：{seg!r}（在项 {raw!r} 中）")
+
+    # 校验必需参数
+    required = _SHAPE_SPECS[shape]["required"]
+    for k in required:
+        if k not in params:
+            raise PlotParseError(
+                f"图形 {shape!r} 缺少必需参数 {k!r}（在项 {raw!r} 中）"
+            )
+
+    return PlotItem(
+        kind="shape",
+        shape=shape,
+        x_range=x_range,
+        y_range=y_range,
+        label=label,
+        params=params,
+    )
+
+
+def _parse_shape_value(val_str: str, key: str, raw: str):
+    """解析几何参数值。
+
+    支持的形式：
+        (1, 2)              → tuple[float, float]
+        [(0,0), (1,0), ...] → list[tuple[float, float]]
+        1.5 / pi / -2       → float
+    """
+    s = val_str.strip()
+    # 点列表：[(x,y), (x,y), ...]
+    if s.startswith("[") and s.endswith("]"):
+        inner = s[1:-1].strip()
+        # 用正则切分 "),(" 之间的边界
+        # 简单做法：逐字符扫描，按顶层逗号切分
+        parts = []
+        buf = []
+        depth = 0
+        for ch in inner:
+            if ch == "(":
+                depth += 1
+                buf.append(ch)
+            elif ch == ")":
+                depth = max(0, depth - 1)
+                buf.append(ch)
+            elif ch == "," and depth == 0:
+                parts.append("".join(buf).strip())
+                buf = []
+            else:
+                buf.append(ch)
+        if buf:
+            parts.append("".join(buf).strip())
+        pts = []
+        for p in parts:
+            p = p.strip()
+            if not p:
+                continue
+            pts.append(_parse_point(p, key, raw))
+        if not pts:
+            raise PlotParseError(f"点列表为空（在项 {raw!r} 中）")
+        return pts
+    # 单个点：(x, y)
+    if s.startswith("(") and s.endswith(")"):
+        return _parse_point(s, key, raw)
+    # 标量：数字或 pi/e 表达式
+    return _eval_scalar(s, axis=key, which=f"参数 {key}")
+
+
+def _parse_point(s: str, key: str, raw: str) -> Tuple[float, float]:
+    """解析 (x, y) 坐标点。"""
+    s = s.strip()
+    if not (s.startswith("(") and s.endswith(")")):
+        raise PlotParseError(f"坐标点应为 (x, y) 形式：{s!r}（在项 {raw!r} 中）")
+    inner = s[1:-1].strip()
+    if "," not in inner:
+        raise PlotParseError(f"坐标点缺少逗号：{s!r}（在项 {raw!r} 中）")
+    a_str, b_str = inner.split(",", 1)
+    x = _eval_scalar(a_str.strip(), axis=key, which=f"点 x 坐标")
+    y = _eval_scalar(b_str.strip(), axis=key, which=f"点 y 坐标")
+    return (x, y)
 
 
 def _parse_range(s: str, axis: str):

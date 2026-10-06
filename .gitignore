@@ -41,11 +41,13 @@ htmlcov/
 *.vrb
 *.dvi
 *.ps
-# 注意：*.pdf 和 *.tex 不忽略——它们是项目的最终/源文件
-# 但函数图 PNG 是生成产物，应忽略
+# 注意：*.pdf 不忽略——它是项目最终产物
+# 但函数图 PNG、.tex 是生成产物，应忽略
 examples/*-plot*.png
+examples/*.tex
 examples/*.aux
 examples/*.log
+examples/*.pdf
 
 # ============ 编辑器 / IDE ============
 .vscode/
