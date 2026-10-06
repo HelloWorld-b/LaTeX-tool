@@ -1,5 +1,7 @@
 include README.md
 include LICENSE
+include CHANGELOG.md
 include SYNTAX_FOR_AI.md
+include PYPI_GUIDE.md
 include requirements.txt
-recursive-include examples *.txt
+recursive-include mathtext2doc *.py py.typed

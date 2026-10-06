@@ -45,3 +45,7 @@ mathtext2doc = "mathtext2doc.cli:main"
 
 [tool.setuptools]
 packages = ["mathtext2doc"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+mathtext2doc = ["py.typed"]
