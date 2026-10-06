@@ -12,6 +12,7 @@ dependencies = [
     "matplotlib>=3.5",
     "numpy>=1.20",
     "sympy>=1.10",
+    "PyMuPDF>=1.23",
 ]
 
 [project.scripts]

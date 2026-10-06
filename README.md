@@ -16,8 +16,10 @@
 要求 Python ≥ 3.10。
 
 ```bash
-pip install matplotlib numpy sympy
+pip install matplotlib numpy sympy PyMuPDF
 ```
+
+> `PyMuPDF` 是 PDF→PNG 转换的默认引擎（纯 Python wheel，无系统依赖）。若不装，工具会自动回退到命令行工具 `pdftoppm`/`pdftocairo`/`convert`。
 
 ### 2. LaTeX 发行版
 
@@ -36,28 +38,29 @@ TeX Live 默认安装会带上 `ctex`；MiKTeX 在首次编译时会自动下载
 xelatex --version
 ```
 
-### 3. PDF→PNG 转换工具（回退路径用）
+### 3. PDF→PNG 转换工具（可选）
 
-LaTeX 本身通常不直接输出 PNG，所以工具会回退到 **PDF→PNG** 路径。需要本机安装以下之一：
+工具会按以下优先级**自动选择**可用的 PDF→PNG 引擎，前一个不可用就回退到下一个：
 
-- **poppler-utils**（推荐）：`pdftoppm` / `pdftocairo`
-  - Ubuntu/Debian：`sudo apt-get install poppler-utils`
-  - macOS：`brew install poppler`
-  - Windows：从 https://blog.alivate.com.au/poppler-windows/ 下载并加入 PATH
-- **ImageMagick**（备选）：`convert`
-  - Ubuntu/Debian：`sudo apt-get install imagemagick`
-  - macOS：`brew install imagemagick`
-  - 注意：ImageMagick 默认会限制 PDF 读取，可能需要修改 `policy.xml`。
+| 优先级 | 工具 | 类型 | 安装方式 |
+|---|---|---|---|
+| 1 | **PyMuPDF** | 纯 Python 库（推荐） | `pip install PyMuPDF` |
+| 2 | `pdftoppm` | 命令行（poppler-utils） | `apt-get install poppler-utils` / `brew install poppler` |
+| 3 | `pdftocairo` | 命令行（poppler-utils） | 同上 |
+| 4 | `convert` | 命令行（ImageMagick） | `apt-get install imagemagick` / `brew install imagemagick` |
+
+**推荐**：直接 `pip install PyMuPDF` 即可，无需任何系统依赖。只有在 PyMuPDF 不可用时才需要装 poppler-utils 或 ImageMagick。
 
 验证：
 
 ```bash
-pdftoppm -v
-# 或
-pdftocairo -v
-# 或
-convert -version
+python -c "import fitz; print('PyMuPDF', fitz.__doc__)"   # 优先
+pdftoppm -v                                                # 回退 1
+pdftocairo -v                                              # 回退 2
+convert -version                                           # 回退 3
 ```
+
+> **ImageMagick 注意**：默认 `policy.xml` 会限制 PDF 读取，可能需要把 `<policy domain="coder" rights="none" pattern="PDF" />` 改为 `rights="read|write"`。
 
 ### 4. 中文字体
 
@@ -226,7 +229,7 @@ x^2 + y^2 = 1, x in [-2, 2], y in [-2, 2], label="单位圆"
 ## 五、编译策略
 
 1. **优先尝试直接 PNG 输出**：检测 `latex` + `dvipng`，若源文件不含中文，尝试 `latex` → DVI → `dvipng` PNG。该路径不依赖 `xelatex`，但**不支持中文**，所以含中文时直接跳过。
-2. **回退到 PDF→PNG**：调用 `xelatex` 编译 `.tex` 生成 PDF，再用 `pdftoppm` / `pdftocairo` / ImageMagick `convert` 把 PDF 按页转 PNG。
+2. **回退到 PDF→PNG**：调用 `xelatex` 编译 `.tex` 生成 PDF，再用 PyMuPDF（优先）/ `pdftoppm` / `pdftocairo` / ImageMagick `convert` 把 PDF 按页转 PNG。
 3. **多页输出**：PDF 有几页就输出几张 PNG，命名为 `foo-1.png`、`foo-2.png` …
 4. **失败处理**：编译失败时保留 `.tex`、`.log`、`.pdf`（若有），输出清晰错误信息（含编译器、文件路径、日志末尾 40 行）。
 

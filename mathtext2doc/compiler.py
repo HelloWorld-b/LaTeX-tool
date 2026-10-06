@@ -298,20 +298,91 @@ def _pdf_to_png(
     dpi: int,
     overwrite: bool,
 ) -> List[str]:
-    """把 PDF 转 PNG，多页输出多张。返回 PNG 路径列表。"""
-    # 优先级：pdftoppm > pdftocairo > convert (ImageMagick)
+    """把 PDF 转 PNG，多页输出多张。返回 PNG 路径列表。
+
+    优先级（前一个不可用就回退到下一个）：
+        1. PyMuPDF (fitz)  — 纯 Python wheel，无系统依赖，质量最好
+        2. pdftoppm        — poppler-utils 命令行
+        3. pdftocairo      — poppler-utils 命令行（渲染质量稍好）
+        4. convert         — ImageMagick 命令行（兜底）
+    """
+    # 1. PyMuPDF（纯 Python，优先）
+    try:
+        import fitz  # PyMuPDF
+        return _pdf_to_png_pymupdf(pdf_path, out_dir, base, dpi, overwrite)
+    except ImportError:
+        pass
+
+    # 2. pdftoppm
     if _which("pdftoppm"):
         return _pdf_to_png_pdftoppm(pdf_path, out_dir, base, dpi, overwrite)
+    # 3. pdftocairo
     if _which("pdftocairo"):
         return _pdf_to_png_pdftocairo(pdf_path, out_dir, base, dpi, overwrite)
+    # 4. ImageMagick convert
     if _which("convert"):
         return _pdf_to_png_convert(pdf_path, out_dir, base, dpi, overwrite)
+
     raise CompileError(
-        "未找到 PDF→PNG 转换工具。请安装 poppler-utils（pdftoppm/pdftocairo）"
-        "或 ImageMagick（convert）。\n"
-        "Ubuntu/Debian: apt-get install poppler-utils\n"
-        "macOS: brew install poppler"
+        "未找到 PDF→PNG 转换工具。请任选一种安装：\n"
+        "  pip install PyMuPDF                # 推荐，纯 Python，无系统依赖\n"
+        "  apt-get install poppler-utils      # 或：pdftoppm/pdftocairo\n"
+        "  brew install poppler               # macOS\n"
+        "  apt-get install imagemagick        # 或：ImageMagick convert"
     )
+
+
+def _pdf_to_png_pymupdf(
+    pdf_path: str, out_dir: str, base: str, dpi: int, overwrite: bool,
+) -> List[str]:
+    """用 PyMuPDF (fitz) 把 PDF 转 PNG。
+
+    优势：纯 Python wheel（pip install PyMuPDF 即可），无系统依赖，
+    渲染质量比 poppler 更好，速度更快。
+    """
+    import fitz  # type: ignore
+
+    # 清理旧文件
+    if overwrite:
+        for fn in os.listdir(out_dir):
+            if fn.startswith(base + "-") and fn.endswith(".png"):
+                try:
+                    os.remove(os.path.join(out_dir, fn))
+                except Exception:
+                    pass
+    else:
+        existing = [fn for fn in os.listdir(out_dir)
+                    if fn.startswith(base + "-") and fn.endswith(".png")]
+        if existing:
+            raise CompileError(
+                f"输出文件已存在：{os.path.join(out_dir, existing[0])} "
+                f"（使用 --overwrite 覆盖）"
+            )
+
+    # PyMuPDF 的 zoom 系数：DPI / 72（PDF 默认 72 DPI）
+    zoom = dpi / 72.0
+    matrix = fitz.Matrix(zoom, zoom)
+
+    try:
+        doc = fitz.open(pdf_path)
+    except Exception as ex:
+        raise CompileError(f"PyMuPDF 打开 PDF 失败：{ex}")
+
+    pngs: List[str] = []
+    try:
+        for page_idx in range(len(doc)):
+            page = doc.load_page(page_idx)
+            # alpha=False 输出 RGB（白底），避免透明背景在 LaTeX 嵌入时变黑
+            pix = page.get_pixmap(matrix=matrix, alpha=False)
+            out_path = os.path.join(out_dir, f"{base}-{page_idx + 1}.png")
+            pix.save(out_path)
+            pngs.append(out_path)
+    finally:
+        doc.close()
+
+    if not pngs:
+        raise CompileError("PyMuPDF 未渲染出任何 PNG（PDF 可能是空的）")
+    return pngs
 
 
 def _pdf_to_png_pdftoppm(
