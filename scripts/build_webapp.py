@@ -184,7 +184,11 @@ body {{
 
 .preview-content {{
   background: #fff; max-width: 800px; margin: 24px auto; padding: 48px 56px;
-  box-shadow: 0 2px 12px rgba(0,0,0,.1); min-height: calc(100vh - 48px);
+  box-shadow: 0 2px 12px rgba(0,0,0,.1);
+  min-height: calc(100vh - 96px);
+  flex-shrink: 0;  /* 不被 flex 容器压缩，让背景跟随内容撑高 */
+  box-sizing: border-box;
+  width: 100%;     /* 配合 max-width 限制宽度 */
 }}
 .preview-content h1 {{ font-size: 24px; margin: 16px 0 12px; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 6px; }}
 .preview-content h2 {{ font-size: 19px; margin: 14px 0 10px; color: #34495e; }}
