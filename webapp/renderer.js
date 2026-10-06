@@ -131,7 +131,12 @@ export function renderDocument(blocks, container, opts = {}) {
       const wrapper = document.createElement('div');
       wrapper.className = 'plot-wrapper';
       wrapper.style.width = (w * 100) + '%';
-      wrapper.style.margin = '1em auto';
+      // align: left 用 margin-right auto，center 用 auto
+      if (block.align === 'left') {
+        wrapper.style.margin = '1em auto 1em 0';
+      } else {
+        wrapper.style.margin = '1em auto';
+      }
       const plotDiv = document.createElement('div');
       plotDiv.id = `plot-${plotIdx}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       plotDiv.className = 'plot-canvas';
@@ -268,7 +273,11 @@ export function generateTex(blocks, opts = {}) {
     if (block instanceof Plot) {
       const w = block.width ?? defaultWidth;
       const path = plotPaths.get(block);
-      parts.push(`\\begin{figure}[h]\n\\centering\n\\noindent\\makebox[\\linewidth][c]{%\n  \\includegraphics[width=${w}\\paperwidth]{${path}}}%\n\\end{figure}\n\n`);
+      if (block.align === 'left') {
+        parts.push(`\\begin{figure}[h]\n\\begin{flushleft}\n\\includegraphics[width=${w}\\paperwidth]{${path}}\n\\end{flushleft}\n\\end{figure}\n\n`);
+      } else {
+        parts.push(`\\begin{figure}[h]\n\\centering\n\\noindent\\makebox[\\linewidth][c]{%\n  \\includegraphics[width=${w}\\paperwidth]{${path}}}%\n\\end{figure}\n\n`);
+      }
       continue;
     }
     if (block instanceof Table) {

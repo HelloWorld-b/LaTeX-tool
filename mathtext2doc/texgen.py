@@ -139,14 +139,26 @@ def _render_block(node, plot_paths: Dict[int, str], default_width: float = 0.7) 
         if not path:
             return "% [plot 图缺失，跳过]\n"
         w = node.width if node.width is not None else default_width
-        include_cmd = "  \\includegraphics[width=" + str(w) + "\\paperwidth]{" + path + "}"
-        return (
-            "\\begin{figure}[h]\n"
-            "\\centering\n"
-            "\\noindent\\makebox[\\linewidth][c]{%\n"
-            + include_cmd + "}%\n"
-            "\\end{figure}\n\n"
-        )
+        align = node.align  # 'left' | 'center' | None
+        include_cmd = "\\includegraphics[width=" + str(w) + "\\paperwidth]{" + path + "}"
+        if align == "left":
+            # 居左：用 flushleft 环境
+            return (
+                "\\begin{figure}[h]\n"
+                "\\begin{flushleft}\n"
+                + include_cmd + "\n"
+                "\\end{flushleft}\n"
+                "\\end{figure}\n\n"
+            )
+        else:
+            # 居中（默认）：用 makebox 让超宽图水平居中
+            return (
+                "\\begin{figure}[h]\n"
+                "\\centering\n"
+                "\\noindent\\makebox[\\linewidth][c]{%\n"
+                "  " + include_cmd + "}%\n"
+                "\\end{figure}\n\n"
+            )
     if isinstance(node, Table):
         return _render_table(node) + "\n"
     return ""

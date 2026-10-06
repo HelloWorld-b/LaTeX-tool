@@ -119,7 +119,8 @@ class PlotItem:
 @dataclass
 class Plot:
     items: List[PlotItem] = field(default_factory=list)
-    width: Optional[float] = None  # 单图宽度覆盖（0~1，相对于 paperwidth）
+    width: Optional[float] = None       # 单图宽度覆盖（0~1，相对于 paperwidth）
+    align: Optional[str] = None         # 单图对齐：'left' | 'center' | None（居中）
 
 
 @dataclass
@@ -165,11 +166,15 @@ def latex_escape(s: str) -> str:
 # @plot 指令解析
 # ---------------------------------------------------------------------------
 
-# @plot{ ... } 或 @plot(width=0.5){ ... }
-# 可选的 (width=0.x) 选项控制图在文档中的宽度（相对于 paperwidth，0~1）
-# 花括号内可以跨多行，分号 ; 分隔多个绘制项。
+# @plot{ ... } 或 @plot(width=0.5){ ... } 或 @plot(align=left){ ... }
+# @geometry{ ... } 是 @plot 的别名，语义相同，用于纯几何场景
+# 选项语法：(width=0.5, align=left) 或 (align=left) 或 (width=0.5) 或无
+#   width: 0~1，图宽占 paperwidth 的比例
+#   align: left | center（默认 center）
 _PLOT_RE = re.compile(
-    r"@plot(?:\(\s*width\s*=\s*([0-9]*\.?[0-9]+)\s*\))?\{(.*?)\}",
+    r"@(plot|geometry)"                          # 关键字
+    r"(?:\(\s*([^)]*)\))?"                       # 可选的 (...) 选项
+    r"\{(.*?)\}",                                # { body }
     re.DOTALL,
 )
 
@@ -613,20 +618,41 @@ def parse_document(text: str) -> List:
     plot_placeholders: List[str] = []
 
     def _capture_plot(m: "re.Match[str]") -> str:
-        width_str = m.group(1)  # 可能为 None
-        body = m.group(2)
+        # group(1) = 关键字 plot/geometry
+        # group(2) = 选项字符串（如 "width=0.5, align=left"），可能为 None
+        # group(3) = body
+        opts_str = m.group(2)
+        body = m.group(3)
         items = _parse_plot_items(body)
         width = None
-        if width_str is not None:
-            try:
-                width = float(width_str)
-            except ValueError:
-                width = None
-            if width is not None and not (0 < width <= 1.0):
-                raise PlotParseError(
-                    f"@plot 的 width 必须在 (0, 1] 之间，得到 {width}"
-                )
-        plot = Plot(items=items, width=width)
+        align = None
+        if opts_str:
+            # 解析 "width=0.5, align=left" 形式
+            for opt in opts_str.split(","):
+                opt = opt.strip()
+                if not opt:
+                    continue
+                km = re.match(r"^(\w+)\s*=\s*(.+)$", opt)
+                if not km:
+                    continue
+                key = km.group(1).lower()
+                val = km.group(2).strip()
+                if key == "width":
+                    try:
+                        width = float(val)
+                    except ValueError:
+                        raise PlotParseError(f"@plot width 值无效：{val}")
+                    if not (0 < width <= 1.0):
+                        raise PlotParseError(
+                            f"@plot 的 width 必须在 (0, 1] 之间，得到 {width}"
+                        )
+                elif key == "align":
+                    align = val.lower()
+                    if align not in ("left", "center"):
+                        raise PlotParseError(
+                            f"@plot 的 align 必须是 left 或 center，得到 {align}"
+                        )
+        plot = Plot(items=items, width=width, align=align)
         plots.append(plot)
         placeholder = f"\x00PLOT{len(plots) - 1}\x00"
         plot_placeholders.append(placeholder)

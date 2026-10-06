@@ -504,10 +504,11 @@ class PlotItemNode extends Node {
   }
 }
 class Plot extends Node {
-  constructor(items, width = null) {
+  constructor(items, width = null, align = null) {
     super();
     this.items = items;
-    this.width = width;  // null = 用全局默认
+    this.width = width;   // null = 用全局默认
+    this.align = align;   // null | 'left' | 'center'
   }
 }
 class BlankLine extends Node {}
@@ -532,7 +533,8 @@ function latexEscape(s) {
 // ---------------------------------------------------------------------------
 // @plot 正则
 // ---------------------------------------------------------------------------
-const PLOT_RE = /@plot(?:\(\s*width\s*=\s*([0-9]*\.?[0-9]+)\s*\))?\{([\s\S]*?)\}/g;
+// @plot{...} 或 @geometry{...}，可选 (width=0.x, align=left)
+const PLOT_RE = /@(plot|geometry)(?:\(\s*([^)]*)\))?\{([\s\S]*?)\}/g;
 
 // ---------------------------------------------------------------------------
 // 区间求值
@@ -796,18 +798,32 @@ const OLIST_RE = /^(\d+)\.\s+(.*)$/;
 const HR_RE = /^(-{3,}|\*{3,}|_{3,})\s*$/;
 const QUOTE_RE = /^>\s?(.*)$/;
 function parseDocument(text) {
-  // 1. 抽出 @plot{...}
+  // 1. 抽出 @plot{...} 或 @geometry{...}
   const plots = [];
-  text = text.replace(PLOT_RE, (m, w, body) => {
+  text = text.replace(PLOT_RE, (m, keyword, optsStr, body) => {
     const items = parsePlotItems(body);
-    let width = null;
-    if (w !== undefined) {
-      width = parseFloat(w);
-      if (!(width > 0 && width <= 1)) {
-        throw new PlotParseError(`@plot 的 width 必须在 (0, 1] 之间，得到 ${width}`);
+    let width = null, align = null;
+    if (optsStr) {
+      // 解析 "width=0.5, align=left"
+      for (const opt of optsStr.split(',')) {
+        const km = opt.trim().match(/^(\w+)\s*=\s*(.+)$/);
+        if (!km) continue;
+        const key = km[1].toLowerCase();
+        const val = km[2].trim();
+        if (key === 'width') {
+          width = parseFloat(val);
+          if (!(width > 0 && width <= 1)) {
+            throw new PlotParseError(`@plot 的 width 必须在 (0, 1] 之间，得到 ${width}`);
+          }
+        } else if (key === 'align') {
+          align = val.toLowerCase();
+          if (align !== 'left' && align !== 'center') {
+            throw new PlotParseError(`@plot 的 align 必须是 left 或 center，得到 ${align}`);
+          }
+        }
       }
     }
-    plots.push(new Plot(items, width));
+    plots.push(new Plot(items, width, align));
     return `\n\x00PLOT${plots.length - 1}\x00\n`;
   });
 
@@ -1430,7 +1446,12 @@ function renderDocument(blocks, container, opts = {}) {
       const wrapper = document.createElement('div');
       wrapper.className = 'plot-wrapper';
       wrapper.style.width = (w * 100) + '%';
-      wrapper.style.margin = '1em auto';
+      // align: left 用 margin-right auto，center 用 auto
+      if (block.align === 'left') {
+        wrapper.style.margin = '1em auto 1em 0';
+      } else {
+        wrapper.style.margin = '1em auto';
+      }
       const plotDiv = document.createElement('div');
       plotDiv.id = `plot-${plotIdx}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       plotDiv.className = 'plot-canvas';
@@ -1567,7 +1588,11 @@ function generateTex(blocks, opts = {}) {
     if (block instanceof Plot) {
       const w = block.width ?? defaultWidth;
       const path = plotPaths.get(block);
-      parts.push(`\\begin{figure}[h]\n\\centering\n\\noindent\\makebox[\\linewidth][c]{%\n  \\includegraphics[width=${w}\\paperwidth]{${path}}}%\n\\end{figure}\n\n`);
+      if (block.align === 'left') {
+        parts.push(`\\begin{figure}[h]\n\\begin{flushleft}\n\\includegraphics[width=${w}\\paperwidth]{${path}}\n\\end{flushleft}\n\\end{figure}\n\n`);
+      } else {
+        parts.push(`\\begin{figure}[h]\n\\centering\n\\noindent\\makebox[\\linewidth][c]{%\n  \\includegraphics[width=${w}\\paperwidth]{${path}}}%\n\\end{figure}\n\n`);
+      }
       continue;
     }
     if (block instanceof Table) {
