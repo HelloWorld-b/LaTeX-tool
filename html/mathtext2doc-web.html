@@ -255,11 +255,14 @@ body {
                "Noto Sans SC", "Microsoft YaHei", sans-serif;
   background: #f5f5f5; color: #222; line-height: 1.7;
 }
-.app { display: flex; height: 100vh; }
-.editor-pane, .preview-pane { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.editor-pane { position: relative; }
-.editor-pane { border-right: 1px solid #ddd; background: #fff; }
-.preview-pane { background: #e9e9e9; overflow-y: auto; }
+.app { display: flex; flex-direction: column; height: 100vh; }
+/* 横屏（默认）：编辑器占满，无右侧预览（预览改为新页签打开） */
+.editor-pane { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; background: #fff; }
+/* 竖屏模式：窗口宽高比 < 0.8 时，工具栏自适应换行 */
+body.portrait .toolbar { flex-wrap: wrap; }
+body.portrait .toolbar h1 { font-size: 13px; }
+body.portrait .toolbar button { padding: 5px 10px; font-size: 12px; }
+body.portrait .toolbar label { font-size: 11px; }
 
 .toolbar {
   display: flex; align-items: center; gap: 8px; padding: 8px 12px;
@@ -336,9 +339,9 @@ body {
 .error-msg { color: #c0392b; }
 .ok-msg { color: #27ae60; }
 
-/* 隐藏滚动条美化 */
-.preview-pane::-webkit-scrollbar { width: 8px; }
-.preview-pane::-webkit-scrollbar-thumb { background: #bbb; border-radius: 4px; }
+/* 隐藏滚动条美化（新页签预览用） */
+.preview-content::-webkit-scrollbar { width: 8px; }
+.preview-content::-webkit-scrollbar-thumb { background: #bbb; border-radius: 4px; }
 
 /* 打印样式：只打印预览区 */
 @media print {
@@ -357,28 +360,20 @@ body {
   <div class="editor-pane">
     <div class="toolbar">
       <h1>📝 mathtext2doc</h1>
-      <button id="btn-render" class="success">▶ 渲染 (Ctrl+Enter)</button>
+      <button id="btn-preview" class="success">👁 在新页签预览 (Ctrl+Enter)</button>
       <button id="btn-sample">📋 示例</button>
       <button id="btn-clear">🗑 清空</button>
       <div class="spacer"></div>
       <label>图宽 <input type="number" id="plot-width" value="0.7" min="0.1" max="1" step="0.1"></label>
       <label>DPI <input type="number" id="dpi" value="150" min="72" max="400" step="10"></label>
+      <span id="layout-indicator" style="font-size:11px;opacity:.7;"></span>
     </div>
-    <textarea id="editor" spellcheck="false" placeholder="在此输入文本，或拖放 .txt / .md 文件到此处加载&#10;支持中文、Markdown、$...$ 公式、@plot{...} 绘图&#10;双击空白处可选择文件"></textarea>
-    <div class="status-bar" id="status">就绪</div>
-  </div>
-  <div class="preview-pane">
-    <div class="toolbar">
-      <button id="btn-png" class="success">📥 下载 PNG（多页）</button>
-      <button id="btn-plots" class="success">📊 导出函数图</button>
-      <button id="btn-print">🖨 打印 / 存为 PDF</button>
-      <button id="btn-tex" class="warn">📄 导出 .tex</button>
-      <div class="spacer"></div>
-      <span id="page-info"></span>
-    </div>
-    <div class="preview-content" id="preview"></div>
+    <textarea id="editor" spellcheck="false" placeholder="在此输入文本，或拖放 .txt / .md 文件到此处加载&#10;支持中文、Markdown、$...$ 公式、@plot{...} 绘图&#10;双击空白处可选择文件&#10;按 Ctrl+Enter 或点上方按钮在新页签预览"></textarea>
+    <div class="status-bar" id="status">就绪 — 编辑后点"在新页签预览"查看渲染结果</div>
   </div>
 </div>
+<!-- 隐藏的预览容器，用于导出 .tex / PNG（不显示在主页签） -->
+<div id="preview" style="position:absolute;left:-9999px;top:0;width:800px;"></div>
 
 <script>
 // ====== 内联库 ======
@@ -1918,18 +1913,19 @@ function setStatus(msg, isErr = false) {
 
 let _rendering = false;  // 防重入锁
 let _renderTimer = null;
-function doRender() {
-  if (_rendering) return;  // 上一次渲染未完成，跳过
+function doRender(targetContainer) {
+  // 渲染到指定容器（主页签隐藏容器 或 新页签窗口）
+  const container = targetContainer || preview;
+  if (_rendering) return;
   const text = editor.value;
   if (!text.trim()) {
-    preview.innerHTML = '<p style="color:#999;text-align:center;padding:48px">在左侧输入文本即可预览</p>';
+    container.innerHTML = '<p style="color:#999;text-align:center;padding:48px">在左侧输入文本即可预览</p>';
     currentBlocks = null;
     setStatus('空文档');
     return;
   }
   _rendering = true;
   setStatus(`⏳ 渲染中...（${text.length} 字符）`);
-  // 保险：5 秒后强制释放锁，避免异常导致永久卡死
   if (_renderTimer) clearTimeout(_renderTimer);
   _renderTimer = setTimeout(() => {
     if (_rendering) {
@@ -1937,12 +1933,11 @@ function doRender() {
       setStatus('✗ 渲染超时（5秒），请减少内容或检查语法', true);
     }
   }, 5000);
-  // 用 setTimeout 让 UI 先更新状态栏，避免大文档渲染时页面无响应
   setTimeout(() => {
     try {
       currentBlocks = parseDocument(text);
       const defaultWidth = parseFloat(document.getElementById('plot-width').value) || 0.7;
-      renderDocument(currentBlocks, preview, { defaultWidth });
+      renderDocument(currentBlocks, container, { defaultWidth });
       setStatus(`✓ 渲染成功，共 ${currentBlocks.length} 个块`);
     } catch (ex) {
       setStatus(`✗ ${ex.message}`, true);
@@ -1954,16 +1949,81 @@ function doRender() {
   }, 30);
 }
 
-editor.addEventListener('input', () => {
-  clearTimeout(renderTimer);
-  renderTimer = setTimeout(doRender, 300);
-});
+// ====== 竖屏模式检测（窗口宽高比 < 0.8 时切换） ======
+function checkLayout() {
+  const w = window.innerWidth, h = window.innerHeight;
+  const ratio = w / h;
+  const isPortrait = ratio < 0.8;
+  document.body.classList.toggle('portrait', isPortrait);
+  const ind = document.getElementById('layout-indicator');
+  if (ind) ind.textContent = isPortrait ? '📐 竖屏' : '📐 横屏';
+}
+window.addEventListener('resize', checkLayout);
+window.addEventListener('load', checkLayout);
 
-editor.addEventListener('keydown', (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-    e.preventDefault(); doRender();
+// ====== 新页签预览 ======
+function openPreviewInNewTab() {
+  const text = editor.value;
+  if (!text.trim()) {
+    setStatus('✗ 空文档，无内容可预览', true);
+    return;
   }
-});
+  setStatus('⏳ 准备预览页签...');
+  // 先在隐藏容器里渲染
+  try {
+    currentBlocks = parseDocument(text);
+  } catch (ex) {
+    setStatus(`✗ 解析失败：${ex.message}`, true);
+    return;
+  }
+  const defaultWidth = parseFloat(document.getElementById('plot-width').value) || 0.7;
+  // 渲染到隐藏容器
+  renderDocument(currentBlocks, preview, { defaultWidth });
+  // 等待 JSXGraph 渲染完成
+  setTimeout(() => {
+    // 收集所有样式
+    let styles = '';
+    for (const sheet of document.styleSheets) {
+      try {
+        for (const rule of sheet.cssRules) styles += rule.cssText + '\n';
+      } catch (e) {}
+    }
+    // 构建新页签的完整 HTML（用字符串拼接避免模板字符串转义问题）
+    const previewHTML = preview.innerHTML;
+    const blockCount = currentBlocks.length;
+    const newDoc = '<!DOCTYPE html>\n' +
+      '<html lang="zh-CN"><head><meta charset="UTF-8">\n' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n' +
+      '<title>mathtext2doc 预览</title>\n' +
+      '<style>' + styles + '\n' +
+      'body { margin: 0; background: #e9e9e9; }\n' +
+      '.preview-content { background: #fff; max-width: 800px; margin: 24px auto; padding: 48px 56px; ' +
+      'box-shadow: 0 2px 12px rgba(0,0,0,.1); min-height: calc(100vh - 48px); box-sizing: border-box; width: 100%; margin-top: 60px; }\n' +
+      '.toolbar { position: fixed; top: 0; left: 0; right: 0; z-index: 100; ' +
+      'display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #2c3e50; color: #fff; flex-wrap: wrap; }\n' +
+      '.toolbar button { background: #3498db; color: #fff; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 13px; }\n' +
+      '.toolbar button.success { background: #27ae60; }\n' +
+      '.toolbar button.warn { background: #e67e22; }\n' +
+      '@media print { .toolbar { display: none; } .preview-content { margin: 0; box-shadow: none; max-width: none; } }\n' +
+      '</style></head>\n<body>\n' +
+      '<div class="toolbar">\n' +
+      '  <button onclick="window.print()" class="success">🖨 打印 / 存为 PDF</button>\n' +
+      '  <span style="flex:1"></span>\n' +
+      '  <span style="font-size:12px;opacity:.8;">mathtext2doc 预览 · 共 ' + blockCount + ' 个块</span>\n' +
+      '</div>\n' +
+      '<div class="preview-content">' + previewHTML + '</div>\n' +
+      '</body></html>';
+    const w = window.open('', '_blank');
+    if (!w) {
+      setStatus('✗ 弹窗被浏览器拦截，请允许弹窗后重试', true);
+      return;
+    }
+    w.document.open();
+    w.document.write(newDoc);
+    w.document.close();
+    setStatus('✓ 已在新页签打开预览（' + blockCount + ' 个块）');
+  }, 500);
+}
 
 // ====== 拖拽上传 ======
 const editorPane = document.querySelector('.editor-pane');
@@ -2030,7 +2090,7 @@ editorPane.addEventListener('drop', (e) => {
       text = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
       text = text.replace(/[\u200B\u200C\u200D\uFEFF]/g, '');
       editor.value = text;
-      doRender();
+      setStatus(`✓ 已加载 ${file.name}，点"在新页签预览"查看渲染`);
     } catch (ex) {
       setStatus(`✗ 处理文件失败：${ex.message}`, true);
     }
@@ -2058,7 +2118,7 @@ fileInput.addEventListener('change', (e) => {
       text = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
       text = text.replace(/[\u200B\u200C\u200D\uFEFF]/g, '');
       editor.value = text;
-      doRender();
+      setStatus(`✓ 已加载 ${file.name}，点"在新页签预览"查看渲染`);
     } catch (ex) {
       setStatus(`✗ 处理文件失败：${ex.message}`, true);
     }
@@ -2075,69 +2135,28 @@ editor.addEventListener('dblclick', (e) => {
   }
 });
 
-document.getElementById('btn-render').addEventListener('click', doRender);
+document.getElementById('btn-preview').addEventListener('click', openPreviewInNewTab);
 document.getElementById('btn-sample').addEventListener('click', () => {
-  editor.value = SAMPLE; doRender();
+  editor.value = SAMPLE;
+  setStatus('✓ 已加载示例，点"在新页签预览"查看');
 });
 document.getElementById('btn-clear').addEventListener('click', () => {
-  editor.value = ''; doRender();
+  editor.value = '';
+  currentBlocks = null;
+  setStatus('已清空');
 });
 
-document.getElementById('btn-tex').addEventListener('click', () => {
-  if (!currentBlocks) { alert('请先渲染文档'); return; }
-  const defaultWidth = parseFloat(document.getElementById('plot-width').value) || 0.7;
-  const tex = generateTex(currentBlocks, { defaultWidth });
-  downloadText(tex, 'document.tex', 'text/x-tex');
-  setStatus('✓ 已导出 .tex');
-});
-
-document.getElementById('btn-png').addEventListener('click', async () => {
-  if (!currentBlocks) { alert('请先渲染文档'); return; }
-  const btn = document.getElementById('btn-png');
-  btn.disabled = true; btn.textContent = '⏳ 渲染中...';
-  try {
-    const dpi = parseInt(document.getElementById('dpi').value) || 150;
-    const pages = await exportToPngPages(preview, { dpi });
-    for (let i = 0; i < pages.length; i++) {
-      downloadDataUrl(pages[i], `document-${i+1}.png`);
-      await new Promise(r => setTimeout(r, 300));
-    }
-    pageInfo.textContent = `已导出 ${pages.length} 张 PNG`;
-    setStatus(`✓ 已导出 ${pages.length} 张 PNG`);
-  } catch (ex) {
-    setStatus(`✗ PNG 导出失败：${ex.message}。建议改用"打印"功能。`, true);
-    console.error(ex);
-  } finally {
-    btn.disabled = false; btn.textContent = '📥 下载 PNG（多页）';
+// Ctrl+Enter 快捷键：在新页签预览
+editor.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    openPreviewInNewTab();
   }
-});
-
-document.getElementById('btn-plots').addEventListener('click', async () => {
-  if (!currentBlocks) { alert('请先渲染文档'); return; }
-  const btn = document.getElementById('btn-plots');
-  btn.disabled = true; btn.textContent = '⏳ 导出中...';
-  try {
-    const dpi = parseInt(document.getElementById('dpi').value) || 150;
-    const canvases = await exportPlotCanvases(preview, { dpi });
-    for (const { idx, canvas } of canvases) {
-      downloadDataUrl(canvas.toDataURL('image/png'), `plot-${idx}.png`);
-      await new Promise(r => setTimeout(r, 300));
-    }
-    setStatus(`✓ 已导出 ${canvases.length} 张函数图 PNG`);
-  } catch (ex) {
-    setStatus(`✗ 函数图导出失败：${ex.message}`, true);
-  } finally {
-    btn.disabled = false; btn.textContent = '📊 导出所有函数图';
-  }
-});
-
-document.getElementById('btn-print').addEventListener('click', () => {
-  printDocument();
 });
 
 // 初始化
 editor.value = SAMPLE;
-doRender();
+checkLayout();
 </script>
 </body>
 </html>
