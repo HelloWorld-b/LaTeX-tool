@@ -437,7 +437,7 @@ editor.addEventListener('input', () => {{
 }});
 
 // ====== 新页签预览 ======
-function openPreviewInNewTab() {{
+async function openPreviewInNewTab() {{
   const text = editor.value;
   if (!text.trim()) {{
     setStatus('✗ 空文档，无内容可预览', true);
@@ -455,49 +455,79 @@ function openPreviewInNewTab() {{
   // 渲染到隐藏容器
   renderDocument(currentBlocks, preview, {{ defaultWidth }});
   // 等待 JSXGraph 渲染完成
-  setTimeout(() => {{
-    // 收集所有样式
-    let styles = '';
-    for (const sheet of document.styleSheets) {{
+  await new Promise(r => setTimeout(r, 800));
+  // 把每个 plot-canvas 里的 SVG 转成 <img dataURL>，避免新页签依赖 JSXGraph
+  const plotDivs = preview.querySelectorAll('.plot-canvas');
+  const plotImgs = [];
+  for (let i = 0; i < plotDivs.length; i++) {{
+    const svg = plotDivs[i].querySelector('svg');
+    if (svg) {{
       try {{
-        for (const rule of sheet.cssRules) styles += rule.cssText + '\\n';
-      }} catch (e) {{}}
+        const dataUrl = await svgToDataUrl(svg, 1.5);
+        plotImgs.push({{ idx: i, dataUrl }});
+      }} catch (e) {{
+        console.warn('plot ' + i + ' 转换失败', e);
+      }}
     }}
-    // 构建新页签的完整 HTML（用字符串拼接避免模板字符串转义问题）
-    const previewHTML = preview.innerHTML;
-    const blockCount = currentBlocks.length;
-    const newDoc = '<!DOCTYPE html>\\n' +
-      '<html lang="zh-CN"><head><meta charset="UTF-8">\\n' +
-      '<meta name="viewport" content="width=device-width, initial-scale=1.0">\\n' +
-      '<title>mathtext2doc 预览</title>\\n' +
-      '<style>' + styles + '\\n' +
-      'body {{ margin: 0; background: #e9e9e9; }}\\n' +
-      '.preview-content {{ background: #fff; max-width: 800px; margin: 24px auto; padding: 48px 56px; ' +
-      'box-shadow: 0 2px 12px rgba(0,0,0,.1); min-height: calc(100vh - 48px); box-sizing: border-box; width: 100%; margin-top: 60px; }}\\n' +
-      '.toolbar {{ position: fixed; top: 0; left: 0; right: 0; z-index: 100; ' +
-      'display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #2c3e50; color: #fff; flex-wrap: wrap; }}\\n' +
-      '.toolbar button {{ background: #3498db; color: #fff; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 13px; }}\\n' +
-      '.toolbar button.success {{ background: #27ae60; }}\\n' +
-      '.toolbar button.warn {{ background: #e67e22; }}\\n' +
-      '@media print {{ .toolbar {{ display: none; }} .preview-content {{ margin: 0; box-shadow: none; max-width: none; }} }}\\n' +
-      '</style></head>\\n<body>\\n' +
-      '<div class="toolbar">\\n' +
-      '  <button onclick="window.print()" class="success">🖨 打印 / 存为 PDF</button>\\n' +
-      '  <span style="flex:1"></span>\\n' +
-      '  <span style="font-size:12px;opacity:.8;">mathtext2doc 预览 · 共 ' + blockCount + ' 个块</span>\\n' +
-      '</div>\\n' +
-      '<div class="preview-content">' + previewHTML + '</div>\\n' +
-      '</body></html>';
-    const w = window.open('', '_blank');
-    if (!w) {{
-      setStatus('✗ 弹窗被浏览器拦截，请允许弹窗后重试', true);
-      return;
+  }}
+  // 用 img 替换原 SVG（在克隆的 DOM 上操作，不影响原页面）
+  const previewClone = preview.cloneNode(true);
+  const cloneDivs = previewClone.querySelectorAll('.plot-canvas');
+  for (const {{ idx, dataUrl }} of plotImgs) {{
+    if (cloneDivs[idx]) {{
+      const div = cloneDivs[idx];
+      const svg = div.querySelector('svg');
+      if (svg) {{
+        const img = document.createElement('img');
+        img.src = dataUrl;
+        img.style.width = '100%';
+        img.style.height = 'auto';
+        img.style.display = 'block';
+        div.replaceChild(img, svg);
+      }}
     }}
-    w.document.open();
-    w.document.write(newDoc);
-    w.document.close();
-    setStatus('✓ 已在新页签打开预览（' + blockCount + ' 个块）');
-  }}, 500);
+  }}
+  // 收集所有样式
+  let styles = '';
+  for (const sheet of document.styleSheets) {{
+    try {{
+      for (const rule of sheet.cssRules) styles += rule.cssText + '\\n';
+    }} catch (e) {{}}
+  }}
+  // 构建新页签的完整 HTML
+  const previewHTML = previewClone.innerHTML;
+  const blockCount = currentBlocks.length;
+  const newDoc = '<!DOCTYPE html>\\n' +
+    '<html lang="zh-CN"><head><meta charset="UTF-8">\\n' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0">\\n' +
+    '<title>mathtext2doc 预览</title>\\n' +
+    '<style>' + styles + '\\n' +
+    'body {{ margin: 0; background: #e9e9e9; }}\\n' +
+    '.preview-content {{ background: #fff; max-width: 800px; margin: 24px auto; padding: 48px 56px; ' +
+    'box-shadow: 0 2px 12px rgba(0,0,0,.1); min-height: calc(100vh - 48px); box-sizing: border-box; width: 100%; margin-top: 60px; }}\\n' +
+    '.toolbar {{ position: fixed; top: 0; left: 0; right: 0; z-index: 100; ' +
+    'display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #2c3e50; color: #fff; flex-wrap: wrap; }}\\n' +
+    '.toolbar button {{ background: #3498db; color: #fff; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 13px; }}\\n' +
+    '.toolbar button.success {{ background: #27ae60; }}\\n' +
+    '.toolbar button.warn {{ background: #e67e22; }}\\n' +
+    '@media print {{ .toolbar {{ display: none; }} .preview-content {{ margin: 0; box-shadow: none; max-width: none; }} }}\\n' +
+    '</style></head>\\n<body>\\n' +
+    '<div class="toolbar">\\n' +
+    '  <button onclick="window.print()" class="success">🖨 打印 / 存为 PDF</button>\\n' +
+    '  <span style="flex:1"></span>\\n' +
+    '  <span style="font-size:12px;opacity:.8;">mathtext2doc 预览 · 共 ' + blockCount + ' 个块</span>\\n' +
+    '</div>\\n' +
+    '<div class="preview-content">' + previewHTML + '</div>\\n' +
+    '</body></html>';
+  const w = window.open('', '_blank');
+  if (!w) {{
+    setStatus('✗ 弹窗被浏览器拦截，请允许弹窗后重试', true);
+    return;
+  }}
+  w.document.open();
+  w.document.write(newDoc);
+  w.document.close();
+  setStatus('✓ 已在新页签打开预览（' + blockCount + ' 个块，' + plotImgs.length + ' 张函数图）');
 }}
 
 // ====== 拖拽上传 ======

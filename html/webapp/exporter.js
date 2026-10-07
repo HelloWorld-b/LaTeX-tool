@@ -13,6 +13,52 @@
  */
 
 // ---------------------------------------------------------------------------
+// SVG → dataURL（用于新页签预览，把 plot SVG 转成 <img> 避免依赖 JSXGraph）
+// ---------------------------------------------------------------------------
+function svgToDataUrl(svgEl, scale = 1) {
+  return new Promise((resolve, reject) => {
+    const rect = svgEl.getBoundingClientRect();
+    const w = rect.width || 400, h = rect.height || 300;
+    const clone = svgEl.cloneNode(true);
+    clone.setAttribute('width', w);
+    clone.setAttribute('height', h);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    // 移除 foreignObject（会导致 tainted）
+    const foreigns = clone.querySelectorAll('foreignObject');
+    for (const fo of foreigns) {
+      const text = fo.textContent || '';
+      const x = fo.getAttribute('x') || 0;
+      const y = fo.getAttribute('y') || 0;
+      const textEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      textEl.setAttribute('x', x);
+      textEl.setAttribute('y', y);
+      textEl.setAttribute('font-family', 'Arial, sans-serif');
+      textEl.setAttribute('font-size', '12');
+      textEl.setAttribute('fill', '#000');
+      textEl.textContent = text;
+      fo.parentNode.replaceChild(textEl, fo);
+    }
+    const svgData = new XMLSerializer().serializeToString(clone);
+    const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(w * scale));
+      canvas.height = Math.max(1, Math.round(h * scale));
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('SVG 渲染失败')); };
+    img.src = url;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // 单个 SVG → Canvas（plot 导出用）
 // ---------------------------------------------------------------------------
 function svgToCanvas(svgEl, scale = 1) {
