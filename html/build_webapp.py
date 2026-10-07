@@ -278,6 +278,8 @@ body.portrait .btn-preview {{ display: inline-block; }}
     <div class="preview-content" id="preview"></div>
   </div>
 </div>
+<!-- 竖屏模式专用的隐藏渲染容器（有尺寸，不占布局，不会被 display:none 影响） -->
+<div id="hidden-render" style="position:absolute; left:-9999px; top:0; width:800px; visibility:hidden;"></div>
 
 <script>
 // ====== 内联库 ======
@@ -455,12 +457,16 @@ async function _buildPreviewHTML() {{
     return null;
   }}
   const defaultWidth = parseFloat(document.getElementById('plot-width').value) || 0.7;
-  // 渲染到隐藏容器
-  renderDocument(currentBlocks, preview, {{ defaultWidth }});
+  // 竖屏时 #preview 被 display:none 隐藏，尺寸为 0，JSXGraph 画不出图
+  // 改用 #hidden-render（有 800px 宽，不可见但尺寸正常）
+  const renderTarget = _isPortrait
+    ? document.getElementById('hidden-render')
+    : preview;
+  renderDocument(currentBlocks, renderTarget, {{ defaultWidth }});
   // 等待 JSXGraph 渲染完成
   await new Promise(r => setTimeout(r, 800));
   // 把每个 plot-canvas 里的 SVG 转成 <img dataURL>
-  const plotDivs = preview.querySelectorAll('.plot-canvas');
+  const plotDivs = renderTarget.querySelectorAll('.plot-canvas');
   const plotImgs = [];
   for (let i = 0; i < plotDivs.length; i++) {{
     const svg = plotDivs[i].querySelector('svg');
@@ -472,7 +478,7 @@ async function _buildPreviewHTML() {{
     }}
   }}
   // 用 img 替换原 SVG（在克隆的 DOM 上操作）
-  const previewClone = preview.cloneNode(true);
+  const previewClone = renderTarget.cloneNode(true);
   const cloneDivs = previewClone.querySelectorAll('.plot-canvas');
   for (const {{ idx, dataUrl }} of plotImgs) {{
     if (cloneDivs[idx]) {{
