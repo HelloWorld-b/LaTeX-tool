@@ -428,35 +428,38 @@ function checkLayout() {{
 window.addEventListener('resize', checkLayout);
 window.addEventListener('load', checkLayout);
 
-// ====== 编辑器 input 事件：横屏自动预览，竖屏不自动 ======
+// ====== 编辑器 input 事件：横屏自动预览到右侧，竖屏自动更新新页签 ======
 editor.addEventListener('input', () => {{
   clearTimeout(renderTimer);
-  if (!_isPortrait) {{
-    renderTimer = setTimeout(doRender, 300);  // 横屏：300ms 防抖自动渲染
-  }}
+  renderTimer = setTimeout(() => {{
+    if (!_isPortrait) {{
+      doRender();  // 横屏：渲染到右侧预览区
+    }} else if (_previewTab && !_previewTab.closed) {{
+      // 竖屏：如果新页签已打开，自动更新它（不跳转焦点）
+      updatePreviewTab();
+    }}
+  }}, 300);
 }});
 
 // ====== 新页签预览 ======
-async function openPreviewInNewTab() {{
+let _previewTab = null;  // 预览页签引用
+
+// 渲染并生成新页签 HTML（不打开页签，只返回 HTML 字符串）
+async function _buildPreviewHTML() {{
   const text = editor.value;
-  if (!text.trim()) {{
-    setStatus('✗ 空文档，无内容可预览', true);
-    return;
-  }}
-  setStatus('⏳ 准备预览页签...');
-  // 先在隐藏容器里渲染
+  if (!text.trim()) return null;
   try {{
     currentBlocks = parseDocument(text);
   }} catch (ex) {{
     setStatus(`✗ 解析失败：${{ex.message}}`, true);
-    return;
+    return null;
   }}
   const defaultWidth = parseFloat(document.getElementById('plot-width').value) || 0.7;
   // 渲染到隐藏容器
   renderDocument(currentBlocks, preview, {{ defaultWidth }});
   // 等待 JSXGraph 渲染完成
   await new Promise(r => setTimeout(r, 800));
-  // 把每个 plot-canvas 里的 SVG 转成 <img dataURL>，避免新页签依赖 JSXGraph
+  // 把每个 plot-canvas 里的 SVG 转成 <img dataURL>
   const plotDivs = preview.querySelectorAll('.plot-canvas');
   const plotImgs = [];
   for (let i = 0; i < plotDivs.length; i++) {{
@@ -465,12 +468,10 @@ async function openPreviewInNewTab() {{
       try {{
         const dataUrl = await svgToDataUrl(svg, 1.5);
         plotImgs.push({{ idx: i, dataUrl }});
-      }} catch (e) {{
-        console.warn('plot ' + i + ' 转换失败', e);
-      }}
+      }} catch (e) {{ console.warn('plot ' + i + ' 转换失败', e); }}
     }}
   }}
-  // 用 img 替换原 SVG（在克隆的 DOM 上操作，不影响原页面）
+  // 用 img 替换原 SVG（在克隆的 DOM 上操作）
   const previewClone = preview.cloneNode(true);
   const cloneDivs = previewClone.querySelectorAll('.plot-canvas');
   for (const {{ idx, dataUrl }} of plotImgs) {{
@@ -480,24 +481,19 @@ async function openPreviewInNewTab() {{
       if (svg) {{
         const img = document.createElement('img');
         img.src = dataUrl;
-        img.style.width = '100%';
-        img.style.height = 'auto';
-        img.style.display = 'block';
+        img.style.width = '100%'; img.style.height = 'auto'; img.style.display = 'block';
         div.replaceChild(img, svg);
       }}
     }}
   }}
-  // 收集所有样式
+  // 收集样式
   let styles = '';
   for (const sheet of document.styleSheets) {{
-    try {{
-      for (const rule of sheet.cssRules) styles += rule.cssText + '\\n';
-    }} catch (e) {{}}
+    try {{ for (const rule of sheet.cssRules) styles += rule.cssText + '\\n'; }} catch (e) {{}}
   }}
-  // 构建新页签的完整 HTML
   const previewHTML = previewClone.innerHTML;
   const blockCount = currentBlocks.length;
-  const newDoc = '<!DOCTYPE html>\\n' +
+  return '<!DOCTYPE html>\\n' +
     '<html lang="zh-CN"><head><meta charset="UTF-8">\\n' +
     '<meta name="viewport" content="width=device-width, initial-scale=1.0">\\n' +
     '<title>mathtext2doc 预览</title>\\n' +
@@ -509,7 +505,6 @@ async function openPreviewInNewTab() {{
     'display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #2c3e50; color: #fff; flex-wrap: wrap; }}\\n' +
     '.toolbar button {{ background: #3498db; color: #fff; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 13px; }}\\n' +
     '.toolbar button.success {{ background: #27ae60; }}\\n' +
-    '.toolbar button.warn {{ background: #e67e22; }}\\n' +
     '@media print {{ .toolbar {{ display: none; }} .preview-content {{ margin: 0; box-shadow: none; max-width: none; }} }}\\n' +
     '</style></head>\\n<body>\\n' +
     '<div class="toolbar">\\n' +
@@ -519,15 +514,51 @@ async function openPreviewInNewTab() {{
     '</div>\\n' +
     '<div class="preview-content">' + previewHTML + '</div>\\n' +
     '</body></html>';
-  const w = window.open('', '_blank');
-  if (!w) {{
+}}
+
+// 更新已打开的预览页签（不跳转焦点）
+async function updatePreviewTab() {{
+  if (!_previewTab || _previewTab.closed) return;
+  setStatus('⏳ 更新预览页签...');
+  const html = await _buildPreviewHTML();
+  if (!html) return;
+  try {{
+    _previewTab.document.open();
+    _previewTab.document.write(html);
+    _previewTab.document.close();
+    // 不调用 _previewTab.focus()，避免抢焦点
+    setStatus('✓ 预览页签已更新（' + currentBlocks.length + ' 个块）');
+  }} catch (ex) {{
+    setStatus('✗ 更新预览页签失败：' + ex.message, true);
+  }}
+}}
+
+// 首次打开新页签预览（用户点击触发）
+async function openPreviewInNewTab() {{
+  setStatus('⏳ 准备预览页签...');
+  const html = await _buildPreviewHTML();
+  if (!html) {{
+    setStatus('✗ 空文档或解析失败', true);
+    return;
+  }}
+  // 如果已有页签且未关闭，直接更新内容
+  if (_previewTab && !_previewTab.closed) {{
+    _previewTab.document.open();
+    _previewTab.document.write(html);
+    _previewTab.document.close();
+    setStatus('✓ 预览页签已更新（' + currentBlocks.length + ' 个块）');
+    return;
+  }}
+  // 首次打开
+  _previewTab = window.open('', '_blank');
+  if (!_previewTab) {{
     setStatus('✗ 弹窗被浏览器拦截，请允许弹窗后重试', true);
     return;
   }}
-  w.document.open();
-  w.document.write(newDoc);
-  w.document.close();
-  setStatus('✓ 已在新页签打开预览（' + blockCount + ' 个块，' + plotImgs.length + ' 张函数图）');
+  _previewTab.document.open();
+  _previewTab.document.write(html);
+  _previewTab.document.close();
+  setStatus('✓ 已在新页签打开预览（' + currentBlocks.length + ' 个块）— 编辑时自动更新');
 }}
 
 // ====== 拖拽上传 ======
