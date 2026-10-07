@@ -147,6 +147,7 @@ body {{
 /* 竖屏模式：窗口宽高比 < 0.8 时，编辑器占满，预览改为新页签 */
 body.portrait .app {{ flex-direction: column; }}
 body.portrait .preview-pane {{ display: none; }}  /* 竖屏隐藏右侧预览区 */
+body.minimal .preview-pane {{ display: flex !important; }}  /* 极简模式预览区永远显示 */
 body.portrait .editor-pane {{ border-right: none; flex: 1; }}
 body.portrait .toolbar {{ flex-wrap: wrap; }}
 body.portrait .toolbar h1 {{ font-size: 13px; }}
@@ -164,6 +165,7 @@ body.minimal .full-only {{ display: none !important; }}
 body.minimal .minimal-only {{ display: inline-block; }}
 /* 极简模式：隐藏编辑器，预览区占满 */
 body.minimal .editor-pane {{ display: none !important; }}
+body.minimal .app {{ flex-direction: row; }}  /* 极简模式不受竖屏影响，始终 row */
 body.minimal .preview-pane {{ flex: 1; }}
 body.minimal .preview-content {{ margin-top: 16px; min-height: calc(100vh - 120px); }}
 /* 极简模式上传提示区 */
@@ -297,13 +299,12 @@ body.minimal .upload-hint.dragover {{ border-color: #3498db; background: #e8f4fd
       <span id="page-info" class="full-only"></span>
       <button id="btn-mode2" class="minimal-only" style="background:#555;">🔧 完整模式</button>
     </div>
-    <div class="preview-content" id="preview">
-      <div class="upload-hint" id="upload-hint">
-        <div style="font-size:48px;">📄</div>
-        <div>点击上方"上传文件"或拖放 .txt / .md 文件到此处</div>
-        <div style="font-size:13px;color:#aaa;">支持中文、Markdown、LaTeX 公式、@plot 绘图</div>
-      </div>
+    <div class="upload-hint" id="upload-hint">
+      <div style="font-size:48px;">📄</div>
+      <div>点击上方"上传文件"或拖放 .txt / .md 文件到此处</div>
+      <div style="font-size:13px;color:#aaa;">支持中文、Markdown、LaTeX 公式、@plot 绘图</div>
     </div>
+    <div class="preview-content" id="preview"></div>
   </div>
 </div>
 <!-- 竖屏模式专用的隐藏渲染容器（有尺寸，不占布局，不会被 display:none 影响） -->
@@ -423,6 +424,9 @@ function doRender(targetContainer) {{
       currentBlocks = parseDocument(text);
       const defaultWidth = parseFloat(document.getElementById('plot-width').value) || 0.7;
       renderDocument(currentBlocks, container, {{ defaultWidth }});
+      // 渲染成功后隐藏上传提示区
+      const hint = document.getElementById('upload-hint');
+      if (hint) hint.style.display = 'none';
       setStatus(`✓ 渲染成功，共 ${{currentBlocks.length}} 个块`);
     }} catch (ex) {{
       setStatus(`✗ ${{ex.message}}`, true);
