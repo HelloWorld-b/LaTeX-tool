@@ -2151,7 +2151,7 @@ async function updatePreviewTab() {
   }
 }
 
-// 首次打开新页签预览（用户点击触发）
+// 首次打开新页签预览（用户点击触发，自动跳转焦点）
 async function openPreviewInNewTab() {
   setStatus('⏳ 准备预览页签...');
   const html = await _buildPreviewHTML();
@@ -2159,11 +2159,12 @@ async function openPreviewInNewTab() {
     setStatus('✗ 空文档或解析失败', true);
     return;
   }
-  // 如果已有页签且未关闭，直接更新内容
+  // 如果已有页签且未关闭，更新内容并跳转焦点
   if (_previewTab && !_previewTab.closed) {
     _previewTab.document.open();
     _previewTab.document.write(html);
     _previewTab.document.close();
+    _previewTab.focus();  // 用户主动点击，跳转到预览页
     setStatus('✓ 预览页签已更新（' + currentBlocks.length + ' 个块）');
     return;
   }
@@ -2176,6 +2177,7 @@ async function openPreviewInNewTab() {
   _previewTab.document.open();
   _previewTab.document.write(html);
   _previewTab.document.close();
+  _previewTab.focus();  // 跳转到预览页（window.open 默认会 focus，但显式调用保险）
   setStatus('✓ 已在新页签打开预览（' + currentBlocks.length + ' 个块）— 编辑时自动更新');
 }
 
