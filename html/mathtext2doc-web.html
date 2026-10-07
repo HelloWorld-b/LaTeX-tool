@@ -275,6 +275,11 @@ body.portrait .toolbar label { font-size: 11px; }
 body.portrait .btn-render { display: none; }
 body.portrait .btn-preview { display: inline-block; }
 
+/* 极简模式：隐藏 .full-only，显示 .minimal-only */
+.minimal-only { display: none; }  /* 默认完整模式，隐藏极简专属按钮 */
+body.minimal .full-only { display: none !important; }  /* 极简模式隐藏完整专属 */
+body.minimal .minimal-only { display: inline-block; }  /* 极简模式显示极简专属 */
+
 .toolbar {
   display: flex; align-items: center; gap: 8px; padding: 8px 12px;
   background: #2c3e50; color: #fff; flex-wrap: wrap;
@@ -371,26 +376,28 @@ body.portrait .btn-preview { display: inline-block; }
   <div class="editor-pane">
     <div class="toolbar">
       <h1>📝 mathtext2doc</h1>
-      <button id="btn-render" class="success btn-render">▶ 渲染 (Ctrl+Enter)</button>
-      <button id="btn-preview" class="success btn-preview">👁 新页签预览 (Ctrl+Enter)</button>
-      <button id="btn-sample">📋 示例</button>
-      <button id="btn-clear">🗑 清空</button>
+      <button id="btn-upload" class="minimal-only">📁 上传文件</button>
+      <button id="btn-render" class="success btn-render full-only">▶ 渲染 (Ctrl+Enter)</button>
+      <button id="btn-preview" class="success btn-preview full-only">👁 新页签预览 (Ctrl+Enter)</button>
+      <button id="btn-sample" class="full-only">📋 示例</button>
+      <button id="btn-clear" class="full-only">🗑 清空</button>
       <div class="spacer"></div>
-      <label>图宽 <input type="number" id="plot-width" value="0.7" min="0.1" max="1" step="0.1"></label>
-      <label>DPI <input type="number" id="dpi" value="150" min="72" max="400" step="10"></label>
-      <span id="layout-indicator" style="font-size:11px;opacity:.7;"></span>
+      <label class="full-only">图宽 <input type="number" id="plot-width" value="0.7" min="0.1" max="1" step="0.1"></label>
+      <label class="full-only">DPI <input type="number" id="dpi" value="150" min="72" max="400" step="10"></label>
+      <span id="layout-indicator" class="full-only" style="font-size:11px;opacity:.7;"></span>
+      <button id="btn-mode" style="background:#555;">🔧 完整模式</button>
     </div>
     <textarea id="editor" spellcheck="false" placeholder="在此输入文本，或拖放 .txt / .md 文件到此处加载&#10;支持中文、Markdown、$...$ 公式、@plot{...} 绘图&#10;双击空白处可选择文件&#10;横屏自动实时预览，竖屏按 Ctrl+Enter 在新页签预览"></textarea>
     <div class="status-bar" id="status">就绪</div>
   </div>
   <div class="preview-pane">
     <div class="toolbar">
-      <button id="btn-png" class="success">📥 下载 PNG（多页）</button>
-      <button id="btn-plots" class="success">📊 导出函数图</button>
-      <button id="btn-print">🖨 打印 / 存为 PDF</button>
-      <button id="btn-tex" class="warn">📄 导出 .tex</button>
+      <button id="btn-png" class="success">📥 下载 PNG</button>
+      <button id="btn-print">🖨 存为 PDF</button>
+      <button id="btn-plots" class="success full-only">📊 导出函数图</button>
+      <button id="btn-tex" class="warn full-only">📄 导出 .tex</button>
       <div class="spacer"></div>
-      <span id="page-info"></span>
+      <span id="page-info" class="full-only"></span>
     </div>
     <div class="preview-content" id="preview"></div>
   </div>
@@ -2366,9 +2373,29 @@ editor.addEventListener('keydown', (e) => {
   }
 });
 
+// ====== 极简模式切换 ======
+function setMinimalMode(minimal) {
+  document.body.classList.toggle('minimal', minimal);
+  const btn = document.getElementById('btn-mode');
+  btn.textContent = minimal ? '🔧 完整模式' : '🔧 极简模式';
+  localStorage.setItem('mathtext2doc_minimal', minimal ? '1' : '0');
+}
+document.getElementById('btn-mode').addEventListener('click', () => {
+  setMinimalMode(!document.body.classList.contains('minimal'));
+});
+
+// ====== 上传文件按钮（极简模式专用） ======
+document.getElementById('btn-upload').addEventListener('click', () => {
+  fileInput.value = ''; fileInput.click();
+});
+
 // 初始化
 editor.value = SAMPLE;
 checkLayout();
+// 恢复模式偏好
+if (localStorage.getItem('mathtext2doc_minimal') === '1') {
+  setMinimalMode(true);
+}
 // 横屏初始渲染
 if (!_isPortrait) doRender();
 </script>
