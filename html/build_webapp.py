@@ -138,14 +138,25 @@ body {{
                "Noto Sans SC", "Microsoft YaHei", sans-serif;
   background: #f5f5f5; color: #222; line-height: 1.7;
 }}
-.app {{ display: flex; flex-direction: column; height: 100vh; }}
-/* 横屏（默认）：编辑器占满，无右侧预览（预览改为新页签打开） */
-.editor-pane {{ flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; background: #fff; }}
-/* 竖屏模式：窗口宽高比 < 0.8 时，工具栏自适应换行 */
+/* 横屏（默认）：左右分栏，编辑器 + 预览区 + 实时预览 */
+.app {{ display: flex; height: 100vh; }}
+.editor-pane, .preview-pane {{ flex: 1; display: flex; flex-direction: column; overflow: hidden; }}
+.editor-pane {{ position: relative; border-right: 1px solid #ddd; background: #fff; }}
+.preview-pane {{ background: #e9e9e9; overflow-y: auto; }}
+
+/* 竖屏模式：窗口宽高比 < 0.8 时，编辑器占满，预览改为新页签 */
+body.portrait .app {{ flex-direction: column; }}
+body.portrait .preview-pane {{ display: none; }}  /* 竖屏隐藏右侧预览区 */
+body.portrait .editor-pane {{ border-right: none; flex: 1; }}
 body.portrait .toolbar {{ flex-wrap: wrap; }}
 body.portrait .toolbar h1 {{ font-size: 13px; }}
 body.portrait .toolbar button {{ padding: 5px 10px; font-size: 12px; }}
 body.portrait .toolbar label {{ font-size: 11px; }}
+/* 竖屏时显示"新页签预览"按钮，隐藏"渲染"按钮 */
+.btn-render {{ display: inline-block; }}
+.btn-preview {{ display: none; }}
+body.portrait .btn-render {{ display: none; }}
+body.portrait .btn-preview {{ display: inline-block; }}
 
 .toolbar {{
   display: flex; align-items: center; gap: 8px; padding: 8px 12px;
@@ -243,7 +254,8 @@ body.portrait .toolbar label {{ font-size: 11px; }}
   <div class="editor-pane">
     <div class="toolbar">
       <h1>📝 mathtext2doc</h1>
-      <button id="btn-preview" class="success">👁 在新页签预览 (Ctrl+Enter)</button>
+      <button id="btn-render" class="success btn-render">▶ 渲染 (Ctrl+Enter)</button>
+      <button id="btn-preview" class="success btn-preview">👁 新页签预览 (Ctrl+Enter)</button>
       <button id="btn-sample">📋 示例</button>
       <button id="btn-clear">🗑 清空</button>
       <div class="spacer"></div>
@@ -251,12 +263,21 @@ body.portrait .toolbar label {{ font-size: 11px; }}
       <label>DPI <input type="number" id="dpi" value="150" min="72" max="400" step="10"></label>
       <span id="layout-indicator" style="font-size:11px;opacity:.7;"></span>
     </div>
-    <textarea id="editor" spellcheck="false" placeholder="在此输入文本，或拖放 .txt / .md 文件到此处加载&#10;支持中文、Markdown、$...$ 公式、@plot{{...}} 绘图&#10;双击空白处可选择文件&#10;按 Ctrl+Enter 或点上方按钮在新页签预览"></textarea>
-    <div class="status-bar" id="status">就绪 — 编辑后点"在新页签预览"查看渲染结果</div>
+    <textarea id="editor" spellcheck="false" placeholder="在此输入文本，或拖放 .txt / .md 文件到此处加载&#10;支持中文、Markdown、$...$ 公式、@plot{{...}} 绘图&#10;双击空白处可选择文件&#10;横屏自动实时预览，竖屏按 Ctrl+Enter 在新页签预览"></textarea>
+    <div class="status-bar" id="status">就绪</div>
+  </div>
+  <div class="preview-pane">
+    <div class="toolbar">
+      <button id="btn-png" class="success">📥 下载 PNG（多页）</button>
+      <button id="btn-plots" class="success">📊 导出函数图</button>
+      <button id="btn-print">🖨 打印 / 存为 PDF</button>
+      <button id="btn-tex" class="warn">📄 导出 .tex</button>
+      <div class="spacer"></div>
+      <span id="page-info"></span>
+    </div>
+    <div class="preview-content" id="preview"></div>
   </div>
 </div>
-<!-- 隐藏的预览容器，用于导出 .tex / PNG（不显示在主页签） -->
-<div id="preview" style="position:absolute;left:-9999px;top:0;width:800px;"></div>
 
 <script>
 // ====== 内联库 ======
@@ -384,6 +405,7 @@ function doRender(targetContainer) {{
 }}
 
 // ====== 竖屏模式检测（窗口宽高比 < 0.8 时切换） ======
+let _isPortrait = false;
 function checkLayout() {{
   const w = window.innerWidth, h = window.innerHeight;
   const ratio = w / h;
@@ -391,9 +413,28 @@ function checkLayout() {{
   document.body.classList.toggle('portrait', isPortrait);
   const ind = document.getElementById('layout-indicator');
   if (ind) ind.textContent = isPortrait ? '📐 竖屏' : '📐 横屏';
+  // 模式切换时更新状态提示
+  if (isPortrait !== _isPortrait) {{
+    _isPortrait = isPortrait;
+    if (isPortrait) {{
+      setStatus('📐 竖屏模式：编辑后点"新页签预览"或按 Ctrl+Enter 查看渲染');
+      preview.innerHTML = '';  // 清空预览区（已隐藏）
+    }} else {{
+      setStatus('📐 横屏模式：编辑后自动实时预览');
+      doRender();  // 切回横屏时立即渲染一次
+    }}
+  }}
 }}
 window.addEventListener('resize', checkLayout);
 window.addEventListener('load', checkLayout);
+
+// ====== 编辑器 input 事件：横屏自动预览，竖屏不自动 ======
+editor.addEventListener('input', () => {{
+  clearTimeout(renderTimer);
+  if (!_isPortrait) {{
+    renderTimer = setTimeout(doRender, 300);  // 横屏：300ms 防抖自动渲染
+  }}
+}});
 
 // ====== 新页签预览 ======
 function openPreviewInNewTab() {{
@@ -569,28 +610,86 @@ editor.addEventListener('dblclick', (e) => {{
   }}
 }});
 
+// 横屏"渲染"按钮：渲染到右侧预览区
+document.getElementById('btn-render').addEventListener('click', () => doRender());
+// 竖屏"新页签预览"按钮
 document.getElementById('btn-preview').addEventListener('click', openPreviewInNewTab);
+
 document.getElementById('btn-sample').addEventListener('click', () => {{
   editor.value = SAMPLE;
-  setStatus('✓ 已加载示例，点"在新页签预览"查看');
+  if (!_isPortrait) doRender();
+  else setStatus('✓ 已加载示例，点"新页签预览"查看');
 }});
 document.getElementById('btn-clear').addEventListener('click', () => {{
   editor.value = '';
   currentBlocks = null;
-  setStatus('已清空');
+  if (!_isPortrait) doRender();
+  else setStatus('已清空');
 }});
 
-// Ctrl+Enter 快捷键：在新页签预览
+// 恢复导出按钮事件（横屏预览区工具栏）
+document.getElementById('btn-tex').addEventListener('click', () => {{
+  if (!currentBlocks) {{ alert('请先渲染文档'); return; }}
+  const defaultWidth = parseFloat(document.getElementById('plot-width').value) || 0.7;
+  const tex = generateTex(currentBlocks, {{ defaultWidth }});
+  downloadText(tex, 'document.tex', 'text/x-tex');
+  setStatus('✓ 已导出 .tex');
+}});
+
+document.getElementById('btn-png').addEventListener('click', async () => {{
+  if (!currentBlocks) {{ alert('请先渲染文档'); return; }}
+  const btn = document.getElementById('btn-png');
+  btn.disabled = true; btn.textContent = '⏳ 渲染中...';
+  try {{
+    const dpi = parseInt(document.getElementById('dpi').value) || 150;
+    const pages = await exportToPngPages(preview, {{ dpi }});
+    for (let i = 0; i < pages.length; i++) {{
+      downloadDataUrl(pages[i], `document-${{i+1}}.png`);
+      await new Promise(r => setTimeout(r, 300));
+    }}
+    setStatus(`✓ 已导出 ${{pages.length}} 张 PNG`);
+  }} catch (ex) {{
+    setStatus(`✗ PNG 导出失败：${{ex.message}}`, true);
+  }} finally {{
+    btn.disabled = false; btn.textContent = '📥 下载 PNG（多页）';
+  }}
+}});
+
+document.getElementById('btn-plots').addEventListener('click', async () => {{
+  if (!currentBlocks) {{ alert('请先渲染文档'); return; }}
+  const btn = document.getElementById('btn-plots');
+  btn.disabled = true; btn.textContent = '⏳ 导出中...';
+  try {{
+    const dpi = parseInt(document.getElementById('dpi').value) || 150;
+    const canvases = await exportPlotCanvases(preview, {{ dpi }});
+    for (const {{ idx, canvas }} of canvases) {{
+      downloadDataUrl(canvas.toDataURL('image/png'), `plot-${{idx}}.png`);
+      await new Promise(r => setTimeout(r, 300));
+    }}
+    setStatus(`✓ 已导出 ${{canvases.length}} 张函数图 PNG`);
+  }} catch (ex) {{
+    setStatus(`✗ 函数图导出失败：${{ex.message}}`, true);
+  }} finally {{
+    btn.disabled = false; btn.textContent = '📊 导出函数图';
+  }}
+}});
+
+document.getElementById('btn-print').addEventListener('click', () => printDocument());
+
+// Ctrl+Enter 快捷键：根据当前模式触发不同行为
 editor.addEventListener('keydown', (e) => {{
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {{
     e.preventDefault();
-    openPreviewInNewTab();
+    if (_isPortrait) openPreviewInNewTab();
+    else doRender();
   }}
 }});
 
 // 初始化
 editor.value = SAMPLE;
 checkLayout();
+// 横屏初始渲染
+if (!_isPortrait) doRender();
 </script>
 </body>
 </html>
